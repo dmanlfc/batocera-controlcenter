@@ -88,16 +88,16 @@ class UICore:
 
         win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
         win.set_title(WINDOW_TITLE_OSD)
-        
+
         # Undecorated on both X11 and Wayland
         win.set_decorated(False)
-        
+
         if is_wayland:
             win.set_type_hint(Gdk.WindowTypeHint.NORMAL)
         else:
             win.set_type_hint(Gdk.WindowTypeHint.DIALOG)
             win.set_keep_above(True)
-        
+
         win.set_resizable(True)
         win.set_skip_taskbar_hint(False)
         win.set_accept_focus(True)
@@ -110,7 +110,7 @@ class UICore:
         # Set width to 64% and max height to 70%
         width = int(sw * 0.64)
         max_height = int(sh * 0.70)
-        
+
         # Store dimensions for positioning
         self._window_width = width
         self._max_height = max_height
@@ -118,17 +118,17 @@ class UICore:
         self._screen_y = y0
         self._screen_width = sw
         self._screen_height = sh
-        
+
         # Set default size - use max_height as starting point
         win.set_default_size(width, max_height)
-        
+
         # Set geometry hints for both X11 and Wayland
         geom = Gdk.Geometry()
         geom.min_width = width
         geom.max_width = width
         geom.max_height = max_height
         win.set_geometry_hints(None, geom, Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE)
-        
+
         # Store for later use
         self._is_wayland = is_wayland
 
@@ -203,7 +203,7 @@ class UICore:
 
         # Track if we have an open dialog to prevent closing on dialog focus
         self._dialog_open = False
-        
+
         def on_focus_out(_w, ev):
             # Don't close if we have a dialog open
             if self._dialog_open:
@@ -217,7 +217,7 @@ class UICore:
                 return False
             GLib.timeout_add(100, check_and_close)
             return False
-        
+
         win.connect("realize", on_realize)
         win.connect("map", on_map)
         win.connect("key-press-event", self._on_key_press)
@@ -232,7 +232,7 @@ class UICore:
         if not os.path.exists(self.css_path):
             print(f"ERROR: CSS file not found: {self.css_path}")
             return
-        
+
         print(f"Loading CSS from: {self.css_path}")
         prov = Gtk.CssProvider()
         try:
@@ -306,7 +306,7 @@ class UICore:
         new_row = self.focus_rows[self.focus_index]
         self._row_set_focused(new_row, True)
         _focus_widget(new_row)
-        
+
         # If new row has items (buttons), select the first one and highlight it
         if hasattr(new_row, "_items") and new_row._items:
             if not hasattr(new_row, "_item_index"):
@@ -317,7 +317,7 @@ class UICore:
             ctx.add_class("focused-cell")
             ctx.add_class("choice-selected")
             _focus_widget(item)
-        
+
         # Apply vgroup cell highlight on new row (trigger focus-in to apply highlights properly)
         try:
             if hasattr(new_row, "_cells") and new_row._cells:
@@ -331,13 +331,13 @@ class UICore:
             return
         self.reset_inactivity_timer()  # Reset timer on activation
         row = self.focus_rows[self.focus_index]
-        
+
         # For rows with items (buttons/toggles), do nothing when row is selected
         # User must navigate to the specific button first
         if hasattr(row, "_items") and row._items:
             # Don't activate anything - user needs to use left/right to select button
             return
-        
+
         # For rows without items (like vgroup cells), use the row's activate callback
         cb = getattr(row, "_on_activate", None)
         if callable(cb):
@@ -347,7 +347,7 @@ class UICore:
         row = self.focus_rows[self.focus_index] if self.focus_rows else None
         if not row:
             return
-        
+
         # If row has items, navigate and activate
         if hasattr(row, "_items") and row._items:
             item_index = getattr(row, "_item_index", 0)
@@ -364,7 +364,7 @@ class UICore:
         row = self.focus_rows[self.focus_index] if self.focus_rows else None
         if not row:
             return
-        
+
         # If row has items, navigate and activate
         if hasattr(row, "_items") and row._items:
             item_index = getattr(row, "_item_index", 0)
@@ -397,13 +397,13 @@ class UICore:
     def quit(self, *_a):
         # Stop gamepad thread and release devices
         self._gamepad_running = False
-        
+
         # Give the thread a moment to exit cleanly
         import time
         time.sleep(0.1)
-        
+
         self._release_gamepads()
-        
+
         try:
             if self.window:
                 self.window.destroy()
@@ -539,7 +539,7 @@ class UICore:
                 print(f"Evdev gamepad error: {e}")
             finally:
                 self._release_gamepads()
-        
+
         # Store the thread so we can track it
         gamepad_thread = threading.Thread(target=evdev_loop, daemon=True)
         gamepad_thread.start()
@@ -706,22 +706,22 @@ class UICore:
         """Reset the inactivity timer when user interacts with the window"""
         if self._inactivity_timeout_seconds <= 0:
             return
-        
+
         # Cancel existing timer
         if self._inactivity_timer_id is not None:
             GLib.source_remove(self._inactivity_timer_id)
-        
+
         # Start new timer - only quit if no dialog is open
         def timeout_callback():
             if not self._dialog_open:
                 self.quit()
             return False
-        
+
         self._inactivity_timer_id = GLib.timeout_add_seconds(
             self._inactivity_timeout_seconds,
             timeout_callback
         )
-    
+
     def make_action_cb(self, action: str, key: str):
         def cb(_w=None):
             act = (action or "").strip()
@@ -735,11 +735,23 @@ class UICore:
     def build_text(self, parent_feat, sub, row_box, align_end=False):
         lbl = Gtk.Label(label="")
         lbl.get_style_context().add_class("value")
-        lbl.set_xalign(1.0 if align_end else 0.0)
+
+        # Get alignment from attribute (default: center)
+        align_attr = (sub.attrs.get("align", "center") or "center").strip().lower()
+        if align_attr == "left":
+            lbl.set_xalign(0.0)
+            lbl.set_halign(Gtk.Align.START)
+        elif align_attr == "right":
+            lbl.set_xalign(1.0)
+            lbl.set_halign(Gtk.Align.END)
+        else:  # center (default)
+            lbl.set_xalign(0.5)
+            lbl.set_halign(Gtk.Align.CENTER)
+
         (row_box.pack_end if align_end else row_box.pack_start)(lbl, False, False, 6)
         disp = (sub.attrs.get("display", "") or "").strip()
         refresh = int(sub.attrs.get("refresh", parent_feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
-        
+
         # Check if display contains ${...} command substitution
         # Use expansion if: has ${, OR doesn't match pure ${...} format
         if "${" in disp and not is_cmd(disp):
@@ -783,6 +795,16 @@ class UICore:
         btn = Gtk.Button.new_with_label(text)
         btn.get_style_context().add_class("cc-button")
         btn.set_can_focus(True)
+
+        # Get alignment from attribute (default: center)
+        align_attr = (sub.attrs.get("align", "center") or "center").strip().lower()
+        if align_attr == "left":
+            btn.set_halign(Gtk.Align.START)
+        elif align_attr == "right":
+            btn.set_halign(Gtk.Align.END)
+        else:  # center (default)
+            btn.set_halign(Gtk.Align.CENTER)
+
         (row_box.pack_end if pack_end else row_box.pack_start)(btn, False, False, 6)
         btn.connect("clicked", self.make_action_cb(action, key=f"btn:{text}:{action}"))
         return btn
@@ -801,7 +823,7 @@ class UICore:
             status_cmd = cmd_of(toggle_value)
         elif toggle_display and is_cmd(toggle_display):
             status_cmd = cmd_of(toggle_display)
-        
+
         status_lbl = None
         if status_cmd and toggle_display and is_cmd(toggle_display):
             # Only show separate label if display is a command
@@ -818,6 +840,16 @@ class UICore:
         tbtn = Gtk.ToggleButton.new_with_label(tbtn_label)
         tbtn.get_style_context().add_class("cc-toggle")
         tbtn.set_focus_on_click(True)
+
+        # Get alignment from attribute (default: center)
+        align_attr = (sub.attrs.get("align", "center") or "center").strip().lower()
+        if align_attr == "left":
+            tbtn.set_halign(Gtk.Align.START)
+        elif align_attr == "right":
+            tbtn.set_halign(Gtk.Align.END)
+        else:  # center (default)
+            tbtn.set_halign(Gtk.Align.CENTER)
+
         (row_box.pack_end if pack_end else row_box.pack_start)(tbtn, False, False, 6)
 
         # Update toggle label to show ON/OFF status
@@ -826,10 +858,10 @@ class UICore:
                 tbtn.set_label("ON")
             else:
                 tbtn.set_label("OFF")
-        
+
         # Track if we're currently updating from user action to prevent refresh conflicts
         toggle_state = {"updating": False, "last_user_change": 0}
-        
+
         if status_cmd:
             # Get initial value immediately
             initial_val = run_shell_capture(status_cmd)
@@ -885,19 +917,29 @@ class UICore:
         """Build an image widget from file path, URL, or ${...} command"""
         import urllib.request
         from gi.repository import GdkPixbuf
-        
+
         disp = (sub.attrs.get("display", "") or "").strip()
         width = sub.attrs.get("width", "")
         height = sub.attrs.get("height", "")
         refresh = int(sub.attrs.get("refresh", parent_feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
-        
+
         # Parse width/height
         target_width = int(width) if width else None
         target_height = int(height) if height else None
-        
+
         img = Gtk.Image()
+
+        # Get alignment from attribute (default: center)
+        align_attr = (sub.attrs.get("align", "center") or "center").strip().lower()
+        if align_attr == "left":
+            img.set_halign(Gtk.Align.START)
+        elif align_attr == "right":
+            img.set_halign(Gtk.Align.END)
+        else:  # center (default)
+            img.set_halign(Gtk.Align.CENTER)
+
         (row_box.pack_end if pack_end else row_box.pack_start)(img, False, False, 6)
-        
+
         def load_image(path_or_url: str):
             """Load image from file path or URL"""
             try:
@@ -944,7 +986,7 @@ class UICore:
             except Exception as e:
                 print(f"Error loading image from '{path_or_url}': {e}")
             return None
-        
+
         def update_image(path_or_url: str):
             """Update the image widget"""
             def do_load():
@@ -953,7 +995,7 @@ class UICore:
                     GLib.idle_add(lambda pb=pixbuf: img.set_from_pixbuf(pb) or False)
             # Load in background thread to avoid blocking
             threading.Thread(target=do_load, daemon=True).start()
-        
+
         # Check if display is a command or static path
         if is_cmd(disp):
             # Dynamic image path from command
@@ -964,7 +1006,7 @@ class UICore:
         elif disp:
             # Static image path - load immediately
             update_image(disp)
-        
+
         return img
 
 
@@ -985,7 +1027,7 @@ def ui_build_containers(core: UICore, xml_root):
             row = _build_vgroup_row(core, child, is_header=True)
             if row:
                 header_box.pack_start(row, False, False, 0)
-    
+
     if header_box.get_children():
         outer.pack_start(header_box, False, False, 0)
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
@@ -1000,7 +1042,7 @@ def ui_build_containers(core: UICore, xml_root):
     # Set a reasonable minimum height for the scrolled area
     scrolled.set_min_content_height(400)
     outer.pack_start(scrolled, True, True, 0)
-    
+
     content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     scrolled.add(content_box)
 
@@ -1114,7 +1156,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             cells.append((cell_event, []))
             row_box.pack_start(cell_event, True, True, 0)
             continue
-        
+
         # Handle direct <img> children in vgroup
         if child.kind == "img":
             cell_event = Gtk.EventBox()
@@ -1132,7 +1174,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             cells.append((cell_event, []))
             row_box.pack_start(cell_event, True, True, 0)
             continue
-        
+
         # Handle nested <vgroup> children in vgroup - treat as a cell
         if child.kind == "vgroup":
             cell_event = Gtk.EventBox()
@@ -1164,7 +1206,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             cells.append((cell_event, []))
             row_box.pack_start(cell_event, True, True, 0)
             continue
-        
+
         # Handle nested <hgroup> children in vgroup
         if child.kind == "hgroup":
             cell_event = Gtk.EventBox()
@@ -1203,7 +1245,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             cells.append((cell_event, []))
             row_box.pack_start(cell_event, True, True, 0)
             continue
-        
+
         if child.kind != "feature":
             continue
 
@@ -1251,7 +1293,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 tog = core.build_toggle(child, sub, cell_box, pack_end=False)
                 tog.set_can_focus(True)
                 cell_controls.append(tog)
-        
+
         # Add choice button if feature has choice children
         choices = [c for c in child.children if c.kind == "choice"]
         if choices:
@@ -1287,7 +1329,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
     # Check if row has any interactive controls
     has_controls = any(controls for _, controls in cells)
-    
+
     if not is_header_row and has_controls:
         row._cells = cells
         # Find first cell with controls and set as initial index
@@ -1417,7 +1459,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     name_lbl.get_style_context().add_class("item-text")
     name_lbl.set_width_chars(15)  # Fixed width for label
     row_box.pack_start(name_lbl, False, False, 0)
-    
+
     # Add spacer to push controls to the right
     spacer = Gtk.Box()
     spacer.set_hexpand(True)
@@ -1557,51 +1599,51 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
         row._on_left = None
         row._on_right = None
         row._on_activate = None
-    
+
     return row
 
 
 def _show_confirm_dialog(core: UICore, message: str, action: str):
     """Show a confirmation dialog before executing an action"""
     core._dialog_open = True  # Prevent main window from closing
-    
+
     dialog = Gtk.Dialog(transient_for=core.window, modal=True)
     dialog.set_default_size(400, 200)
     dialog.set_decorated(False)
     dialog.set_resizable(False)
     dialog.set_type_hint(Gdk.WindowTypeHint.DIALOG)
     dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
-    
+
     # Style the dialog window itself
     dialog.get_style_context().add_class("popup-root")
     dialog.get_style_context().add_class("confirm-dialog")
-    
+
     # Add frame for inner content
     frame = Gtk.Frame()
     frame.set_shadow_type(Gtk.ShadowType.NONE)
-    
+
     content = dialog.get_content_area()
     content.set_border_width(0)  # Remove default border
     content.add(frame)
-    
+
     inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     inner.set_border_width(20)
     frame.add(inner)
-    
+
     label = Gtk.Label(label=message)
     label.set_xalign(0.5)
     label.set_line_wrap(True)
     label.get_style_context().add_class("item-text")
     inner.pack_start(label, True, True, 15)
-    
+
     # Button box
     button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
     button_box.set_halign(Gtk.Align.CENTER)
     inner.pack_start(button_box, False, False, 10)
-    
+
     buttons = []
     current_btn = [0]  # 0 = Cancel (default), 1 = Confirm
-    
+
     cancel_btn = Gtk.Button.new_with_label("Cancel")
     cancel_btn.get_style_context().add_class("cc-button")
     cancel_btn.set_size_request(100, -1)
@@ -1609,14 +1651,14 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
     button_box.pack_start(cancel_btn, False, False, 0)
     cancel_btn.connect("clicked", lambda _: dialog.destroy())
     buttons.append(cancel_btn)
-    
+
     confirm_btn = Gtk.Button.new_with_label("Confirm")
     confirm_btn.get_style_context().add_class("cc-button")
     confirm_btn.set_size_request(100, -1)
     confirm_btn.set_can_focus(True)
     button_box.pack_start(confirm_btn, False, False, 0)
     buttons.append(confirm_btn)
-    
+
     def update_button_focus():
         for i, btn in enumerate(buttons):
             ctx = btn.get_style_context()
@@ -1627,15 +1669,15 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
             else:
                 ctx.remove_class("focused-cell")
                 ctx.remove_class("choice-selected")
-    
+
     def on_confirm(_w):
         if action:
             threading.Thread(target=lambda: run_shell_capture(action), daemon=True).start()
         dialog.destroy()
-    
+
     # Override gamepad handler for dialog
     original_handler = core._handle_gamepad_action
-    
+
     def dialog_gamepad_handler(action_key: str):
         core.reset_inactivity_timer()  # Reset timer on dialog interaction
         if action_key == "activate":
@@ -1649,9 +1691,9 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
             current_btn[0] = 1 - current_btn[0]  # Toggle between 0 and 1
             update_button_focus()
         return False
-    
+
     core._handle_gamepad_action = dialog_gamepad_handler
-    
+
     def on_key_press(_w, ev: Gdk.EventKey):
         core.reset_inactivity_timer()  # Reset timer on keyboard interaction
         key = Gdk.keyval_name(ev.keyval) or ""
@@ -1673,24 +1715,24 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
                 dialog.destroy()
             return True
         return False
-    
+
     def on_button_click(_w):
         core.reset_inactivity_timer()  # Reset timer on button click
-    
+
     cancel_btn.connect("clicked", lambda _: (on_button_click(_), dialog.destroy()))
     confirm_btn.connect("clicked", lambda _: (on_button_click(_), on_confirm(_)))
     dialog.connect("key-press-event", on_key_press)
-    
+
     dialog.show_all()
     current_btn[0] = 0  # Default to Cancel
     GLib.idle_add(update_button_focus)
-    
+
     dialog.run()
-    
+
     # Restore original handler
     core._handle_gamepad_action = original_handler
     core._dialog_open = False  # Allow main window to close again
-    
+
     try:
         dialog.destroy()
     except:
@@ -1700,55 +1742,55 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
 def _open_choice_popup(core: UICore, feature_label: str, choices):
     """Open a popup dialog to select from available choices"""
     core._dialog_open = True  # Prevent main window from closing
-    
+
     dialog = Gtk.Dialog(transient_for=core.window, modal=True)
     dialog.set_default_size(450, 350)
     dialog.set_decorated(False)
     dialog.set_resizable(False)
     dialog.set_type_hint(Gdk.WindowTypeHint.DIALOG)
     dialog.set_position(Gtk.WindowPosition.CENTER_ON_PARENT)
-    
+
     # Style the dialog window itself
     dialog.get_style_context().add_class("popup-root")
     dialog.get_style_context().add_class("confirm-dialog")
-    
+
     # Add frame for inner content
     frame = Gtk.Frame()
     frame.set_shadow_type(Gtk.ShadowType.NONE)
-    
+
     content = dialog.get_content_area()
     content.set_border_width(0)  # Remove default border
     content.add(frame)
-    
+
     inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     inner.set_border_width(20)
     frame.add(inner)
-    
+
     label = Gtk.Label(label=f"Choose {feature_label}:")
     label.set_xalign(0.5)  # Center the label
     label.get_style_context().add_class("group-title")
     inner.pack_start(label, False, False, 15)
-    
+
     # Create a scrolled window for the choices
     scrolled = Gtk.ScrolledWindow()
     scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
     scrolled.set_min_content_height(200)
     inner.pack_start(scrolled, True, True, 0)
-    
+
     # Box to hold choice buttons
     choice_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
     choice_box.set_border_width(6)
     scrolled.add(choice_box)
-    
+
     choice_buttons = []
     current_choice = [0]
-    
+
     def on_choice_selected(action: str):
         import threading
         dialog.response(Gtk.ResponseType.OK)
         if action:
             threading.Thread(target=lambda: run_shell_capture(action), daemon=True).start()
-    
+
     def update_choice_focus():
         for i, btn in enumerate(choice_buttons):
             ctx = btn.get_style_context()
@@ -1759,10 +1801,10 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
             else:
                 ctx.remove_class("focused-cell")
                 ctx.remove_class("choice-selected")
-    
+
     # Override core's gamepad handler temporarily for dialog navigation
     original_handler = core._handle_gamepad_action
-    
+
     def dialog_gamepad_handler(action: str):
         core.reset_inactivity_timer()  # Reset timer on dialog interaction
         if action == "activate":
@@ -1777,26 +1819,26 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
             current_choice[0] = min(len(choice_buttons) - 1, current_choice[0] + 1)
             update_choice_focus()
         return False
-    
+
     core._handle_gamepad_action = dialog_gamepad_handler
-    
+
     # Create a button for each choice
     for choice in choices:
         display = (choice.attrs.get("display", "") or "Option").strip()
         action = choice.attrs.get("action", "")
-        
+
         btn = Gtk.Button.new_with_label(display)
         btn.set_can_focus(True)
         btn.get_style_context().add_class("choice-option")
         choice_box.pack_start(btn, False, False, 0)
-        
+
         def on_choice_click(_w, a=action):
             core.reset_inactivity_timer()  # Reset timer on button click
             on_choice_selected(a)
-        
+
         btn.connect("clicked", on_choice_click)
         choice_buttons.append(btn)
-    
+
     # Add keyboard navigation
     def on_key_press(_w, ev: Gdk.EventKey):
         core.reset_inactivity_timer()  # Reset timer on keyboard interaction
@@ -1817,15 +1859,15 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
                 choice_buttons[current_choice[0]].emit("clicked")
             return True
         return False
-    
+
     dialog.connect("key-press-event", on_key_press)
-    
+
     dialog.show_all()
-    
+
     # Apply initial focus after dialog is shown
     if choice_buttons:
         GLib.idle_add(update_choice_focus)
-    
+
     # On Wayland, remove dialog decorations
     if core._is_wayland:
         def remove_dialog_decorations():
@@ -1841,15 +1883,13 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
                 pass
         import threading
         threading.Thread(target=remove_dialog_decorations, daemon=True).start()
-    
+
     dialog.run()
     dialog.destroy()
-    
+
     # Restore original handler
     core._handle_gamepad_action = original_handler
     core._dialog_open = False  # Allow main window to close again
-
-
 
 
 # ---- Application wrapper ----
@@ -1863,9 +1903,9 @@ class ControlCenterApp:
     def run(self):
         self.core.start_refresh()
         self.core.start_gamepad()
-        
+
         # Set up inactivity timer if specified (resets on user interaction)
         if self.auto_close_seconds > 0:
             self.core.reset_inactivity_timer()
-        
+
         Gtk.main()

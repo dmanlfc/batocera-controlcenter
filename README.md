@@ -1,6 +1,6 @@
 # Batocera Control Center
 
-A flexible, XML-driven control panel for Batocera that provides an on-screen interface for system configuration and control. Works on both X11 and Wayland (Sway) with keyboard, mouse, and gamepad support.
+A flexible, XML-driven control panel for Batocera that provides an on-screen interface for system configuration and control. Works on both X11 and Wayland (Sway) with gamepad, touchscreen and keyboard support
 
 ![Batocera Control Center](controlcenter-screenshot.png)
 
@@ -123,6 +123,7 @@ Executes a shell command when clicked.
 **Attributes:**
 - `display`: Button label
 - `action`: Shell command to execute
+- `align`: Button alignment - `left`, `center` (default), or `right`
 
 #### `<button_confirm>` - Confirmation Button
 Shows a confirmation dialog before executing the action.
@@ -151,6 +152,7 @@ A switch that executes different commands for ON/OFF states.
 - `action_on`: Command to execute when turning ON
 - `action_off`: Command to execute when turning OFF
 - `refresh`: Update interval in seconds (default: 1)
+- `align`: Toggle alignment - `left`, `center` (default), or `right`
 
 #### `<text>` - Display Text
 Shows static text or dynamic output from a command.
@@ -169,6 +171,7 @@ Shows static text or dynamic output from a command.
 **Attributes:**
 - `display`: Text to display or `${command}` for dynamic content
 - `refresh`: Update interval in seconds (default: 1)
+- `align`: Text alignment - `left`, `center` (default), or `right`
 
 **Command formats:**
 - `${command}`: Single command, output replaces entire text
@@ -209,6 +212,7 @@ Shows an image from a file, URL, or command output.
 - `width`: Image width in pixels (optional)
 - `height`: Image height in pixels (optional)
 - `refresh`: Update interval for dynamic images (default: 1)
+- `align`: Image alignment - `left`, `center` (default), or `right`
 
 **Notes:**
 - If only width or height is specified, aspect ratio is preserved

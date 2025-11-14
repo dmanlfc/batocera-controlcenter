@@ -1,7 +1,7 @@
 /* Batocera Control Center - GTK3 Compatible CSS */
 
 * {
-  font-size: 15pt;
+  font-size: 16pt;
 }
 
 .popup-root {
@@ -12,7 +12,7 @@
 .header {
   color: #2d3142;
   font-weight: bold;
-  font-size: 14pt;
+  font-size: 16pt;
 }
 
 /* Fixed width for header values to prevent shifting */
@@ -23,13 +23,13 @@
 
 .item-text {
   color: #2d3142;
-  font-size: 15pt;
+  font-size: 16pt;
 }
 
 .value {
   color: #1976d2;
   font-weight: bold;
-  font-size: 18pt;
+  font-size: 16pt;
 }
 
 /* All buttons */
@@ -37,7 +37,7 @@ button {
   border-radius: 20px;
   padding: 12px 24px;
   font-weight: bold;
-  font-size: 14pt;
+  font-size: 16pt;
   min-width: 85px;
   border: 3px solid transparent;
 }
@@ -63,18 +63,18 @@ button.cc-toggle:checked {
 }
 
 /* Focused row - no background, only controls get highlighted */
-.focused { 
+.focused {
   background-color: transparent;
 }
 
 /* Separator */
-.section-separator { 
+.section-separator {
   background-color: #d7dde6;
   min-height: 2px;
 }
 
 /* vgroup */
-.vgroup-row { 
+.vgroup-row {
   padding: 6px 0;
 }
 
@@ -138,7 +138,7 @@ button.cc-toggle:focus {
 
 .group-title {
   color: #1976d2;
-  font-size: 15pt;
+  font-size: 16pt;
   font-weight: bold;
   padding: 0 12px;
 }

@@ -1,7 +1,7 @@
 <features>
   <vgroup name="Top bar" role="header">
-    <feature name="Time">
-      <text display="${date +'%H:%M:%S'}" />
+    <feature>
+      <text display="${batocera-info --short}" />
     </feature>
     <feature display="Batocera">
       <text display="${batocera-version | cut -d' ' -f1}" />
@@ -45,7 +45,6 @@
     </vgroup>
   </hgroup>
   <hgroup name="id2" display="Power Parameters">
-    <text display="${batocera_battery_checker}" />
     <vgroup>
       <feature name="PowerMode" display="Power Mode">
         <text display="${cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor}" />

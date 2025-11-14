@@ -13,6 +13,12 @@ import os
 import sys
 import signal
 
+# Add script directory to path so imports work from anywhere
+script_path = os.path.realpath(__file__)
+script_dir = os.path.dirname(script_path)
+if script_dir not in sys.path:
+    sys.path.insert(0, script_dir)
+
 os.environ.setdefault("NO_AT_BRIDGE", "1")
 
 import gi
@@ -63,31 +69,41 @@ def main():
         # Return default path even if it doesn't exist (for error messages)
         return default_path
     
-    # Get script directory for default paths
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Get script directory for default paths (follow symlinks)
+    script_path = os.path.realpath(__file__)
+    script_dir = os.path.dirname(script_path)
     
     # Paths and parameters
+    xml_path = None
+    css_path = None
     auto_close_seconds = 0  # 0 = never auto-close
     
-    # Parse command line arguments
-    if len(sys.argv) >= 2 and sys.argv[1] not in ("-h", "--help"):
-        xml_path = sys.argv[1]
-    else:
-        # No argument - search in priority order
+    # Parse command line arguments - any numeric argument is the timeout
+    for arg in sys.argv[1:]:
+        if arg in ("-h", "--help"):
+            continue
+        # Check if it's a number (timeout)
+        try:
+            auto_close_seconds = int(arg)
+            continue
+        except ValueError:
+            pass
+        # Check if it's an XML file
+        if arg.endswith('.xml') or xml_path is None:
+            if xml_path is None:
+                xml_path = arg
+        # Otherwise it's a CSS file
+        elif arg.endswith('.css') or css_path is None:
+            if css_path is None:
+                css_path = arg
+
+    # If no XML path specified, search in priority order
+    if xml_path is None:
         xml_path = find_file("controlcenter.xml", os.path.join(script_dir, "controlcenter.xml"))
     
-    if len(sys.argv) >= 3:
-        css_path = sys.argv[2]
-    else:
-        # No argument - search in priority order
+    # If no CSS path specified, search in priority order
+    if css_path is None:
         css_path = find_file("style.css", os.path.join(script_dir, "style.css"))
-    
-    if len(sys.argv) >= 4:
-        try:
-            auto_close_seconds = int(sys.argv[3])
-        except ValueError:
-            sys.stderr.write(f"WARNING: Invalid auto-close timeout '{sys.argv[3]}', using 0 (no auto-close)\n")
-            auto_close_seconds = 0
 
     if not os.path.exists(xml_path):
         sys.stderr.write(f"ERROR: XML file not found: {xml_path}\n")
