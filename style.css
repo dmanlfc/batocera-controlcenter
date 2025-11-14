@@ -1,0 +1,144 @@
+/* Batocera Control Center - GTK3 Compatible CSS */
+
+* {
+  font-size: 15pt;
+}
+
+.popup-root {
+  background-color: #f8f9fb;
+  color: #1a1d29;
+}
+
+.header {
+  color: #2d3142;
+  font-weight: bold;
+  font-size: 14pt;
+}
+
+/* Fixed width for header values to prevent shifting */
+.vgroup-row .header + .value,
+.vgroup-row .value {
+  min-width: 120px;
+}
+
+.item-text {
+  color: #2d3142;
+  font-size: 15pt;
+}
+
+.value {
+  color: #1976d2;
+  font-weight: bold;
+  font-size: 18pt;
+}
+
+/* All buttons */
+button {
+  border-radius: 20px;
+  padding: 12px 24px;
+  font-weight: bold;
+  font-size: 14pt;
+  min-width: 85px;
+  border: 3px solid transparent;
+}
+
+button.cc-button, button.cc-choice, button.choice-option {
+  background-color: #e3e8f0;
+  color: #1a1d29;
+  border-color: #b8c5d6;
+}
+
+/* Toggles */
+button.cc-toggle {
+  background-color: #bdbdbd;
+  color: #000000;
+  border-color: #757575;
+  font-size: 16pt;
+  min-width: 100px;
+}
+
+button.cc-toggle:checked {
+  background-color: #66bb6a;
+  border-color: #43a047;
+}
+
+/* Focused row - no background, only controls get highlighted */
+.focused { 
+  background-color: transparent;
+}
+
+/* Separator */
+.section-separator { 
+  background-color: #d7dde6;
+  min-height: 2px;
+}
+
+/* vgroup */
+.vgroup-row { 
+  padding: 6px 0;
+}
+
+.vgroup-cell {
+  background-color: #ffffff;
+  padding: 8px 12px;
+}
+
+.vgroup-cell-first {
+  min-width: 180px;
+}
+
+/* Selection - light blue background for selected items */
+.focused-cell {
+  background-color: transparent;
+  border-color: #1976d2;
+}
+
+.choice-selected {
+  background-color: #bbdefb;
+  border-color: #1976d2;
+  color: #000000;
+  font-weight: bold;
+}
+
+/* Selected/focused buttons - light blue background */
+button.choice-selected,
+button.focused-cell,
+button.cc-button.choice-selected,
+button.cc-button.focused-cell,
+button.cc-button:focus {
+  background-color: #bbdefb;
+  background-image: none;
+  border-color: #1976d2;
+  color: #000000;
+}
+
+button.cc-toggle.choice-selected,
+button.cc-toggle.focused-cell,
+button.cc-toggle:focus {
+  background-color: #bbdefb;
+  background-image: none;
+  border-color: #1976d2;
+}
+
+/* Popup dialogs - single clean border */
+.confirm-dialog {
+  border: 3px solid #1976d2;
+  border-radius: 12px;
+  background-color: #f8f9fb;
+}
+
+/* Group frame */
+.group-frame {
+  border: 2px solid #d4dce8;
+  border-radius: 16px;
+  margin: 14px 0;
+  padding: 16px;
+  background-color: #ffffff;
+}
+
+.group-title {
+  color: #1976d2;
+  font-size: 15pt;
+  font-weight: bold;
+  padding: 0 12px;
+}
