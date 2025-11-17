@@ -32,7 +32,7 @@ def expand_command_string(s: str) -> str:
     """
     if not s or "${" not in s:
         return s
-    
+
     result = s
     # Find ${...} patterns with proper brace matching
     i = 0
@@ -43,7 +43,7 @@ def expand_command_string(s: str) -> str:
             i += 2
             depth = 1
             cmd_start = i
-            
+
             # Find matching closing brace
             while i < len(result) and depth > 0:
                 if result[i] == '{':
@@ -51,7 +51,7 @@ def expand_command_string(s: str) -> str:
                 elif result[i] == '}':
                     depth -= 1
                 i += 1
-            
+
             if depth == 0:
                 # Extract and run command
                 cmd = result[cmd_start:i-1]
@@ -64,7 +64,7 @@ def expand_command_string(s: str) -> str:
                 i = start + 2
         else:
             i += 1
-    
+
     return result
 
 def run_shell_capture(cmd: str, timeout_sec: float = 3.0) -> str:

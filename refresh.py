@@ -11,7 +11,7 @@ import threading
 from gi.repository import GLib
 from shell import run_shell_capture
 
-DEFAULT_REFRESH_SEC = 1.0  # every second (faster refresh uses more CPU)
+DEFAULT_REFRESH_SEC = 0  # no refresh by default (set refresh="1.0" on elements that need updates ever 1sec)
 
 class RefreshTask:
     def __init__(self, widget_update_fn, cmd: str, interval_sec: float):

@@ -61,23 +61,23 @@ def main():
             f"/usr/share/batocera/controlcenter/{filename}",
             default_path
         ]
-        
+
         for path in search_paths:
             if os.path.exists(path):
                 return path
-        
+
         # Return default path even if it doesn't exist (for error messages)
         return default_path
-    
+
     # Get script directory for default paths (follow symlinks)
     script_path = os.path.realpath(__file__)
     script_dir = os.path.dirname(script_path)
-    
+
     # Paths and parameters
     xml_path = None
     css_path = None
     auto_close_seconds = 0  # 0 = never auto-close
-    
+
     # Parse command line arguments - any numeric argument is the timeout
     for arg in sys.argv[1:]:
         if arg in ("-h", "--help"):
@@ -100,7 +100,7 @@ def main():
     # If no XML path specified, search in priority order
     if xml_path is None:
         xml_path = find_file("controlcenter.xml", os.path.join(script_dir, "controlcenter.xml"))
-    
+
     # If no CSS path specified, search in priority order
     if css_path is None:
         css_path = find_file("style.css", os.path.join(script_dir, "style.css"))

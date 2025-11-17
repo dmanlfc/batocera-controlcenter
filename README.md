@@ -66,6 +66,65 @@ This allows users to customize their configuration without modifying system file
 </features>
 ```
 
+### Universal Attributes
+
+These attributes can be used on any element:
+
+#### `id` - Element Identifier
+Assigns a unique identifier to an element for conditional rendering.
+
+```xml
+<text id="public_ip" display="${curl ifconfig.me}" />
+```
+
+#### `if` - Conditional Rendering
+Controls whether an element is rendered based on a condition.
+
+**Supported conditions:**
+
+1. **Check if another element is rendered:**
+   ```xml
+   <!-- Show only if element with id="cheevos" is rendered -->
+   <text if="id(cheevos)" display="Achievements enabled!" />
+   ```
+
+2. **Check if another element is NOT rendered:**
+   ```xml
+   <!-- Show only if element with id="cheevos" is NOT rendered -->
+   <text if="!id(cheevos)" display="Achievements disabled" />
+   ```
+
+3. **Check shell command output:**
+   ```xml
+   <!-- Show only if command returns non-empty string -->
+   <feature if="${pgrep emulatorlauncher}" display="Game Running">
+     <text display="A game is currently running" />
+   </feature>
+   ```
+
+**Important Notes:**
+- **Order matters**: Elements are processed top-to-bottom. An element with `if="id(xxx)"` must come AFTER the element with `id="xxx"`
+- **Content-based IDs**: For `<text>` elements with commands, the ID is only registered if the command returns non-empty content
+- **Dynamic IDs**: IDs can be registered/unregistered dynamically as content changes (useful with `refresh`)
+
+**Examples:**
+
+```xml
+<!-- Conditional game info - only show if emulator is running -->
+<hgroup display="Game Info" if="${pgrep emulatorlauncher}">
+  <vgroup>
+    <feature display="Current Game">
+      <text display="${get-current-game}" />
+    </feature>
+  </vgroup>
+</hgroup>
+
+<!-- Show different messages based on achievement status -->
+<text id="achievements" display="${check-achievements}" />
+<text if="id(achievements)" display="Achievements Active" />
+<text if="!id(achievements)" display="Achievements Disabled" />
+```
+
 ### Container Elements
 
 #### `<hgroup>` - Horizontal Group
@@ -140,7 +199,7 @@ Shows a confirmation dialog before executing the action.
 A switch that executes different commands for ON/OFF states.
 
 ```xml
-<toggle 
+<toggle
   value="${batocera-audio getSystemMute}"
   action_on="batocera-audio setSystemVolume mute"
   action_off="batocera-audio setSystemVolume unmute" />
@@ -151,7 +210,7 @@ A switch that executes different commands for ON/OFF states.
 - `display`: Command to get display value (optional, shows as label if provided)
 - `action_on`: Command to execute when turning ON
 - `action_off`: Command to execute when turning OFF
-- `refresh`: Update interval in seconds (default: 1)
+- `refresh`: Update interval in seconds (default: 0 = no refresh). Can be integer or float (e.g., `1`, `0.5`, `2.5`)
 - `align`: Toggle alignment - `left`, `center` (default), or `right`
 
 #### `<text>` - Display Text
@@ -170,7 +229,7 @@ Shows static text or dynamic output from a command.
 
 **Attributes:**
 - `display`: Text to display or `${command}` for dynamic content
-- `refresh`: Update interval in seconds (default: 1)
+- `refresh`: Update interval in seconds (default: 0 = no refresh). Can be integer or float (e.g., `1`, `0.5`, `2.5`)
 - `align`: Text alignment - `left`, `center` (default), or `right`
 
 **Command formats:**
@@ -211,12 +270,118 @@ Shows an image from a file, URL, or command output.
 - `display`: File path, URL, or `${command}` that returns a path
 - `width`: Image width in pixels (optional)
 - `height`: Image height in pixels (optional)
-- `refresh`: Update interval for dynamic images (default: 1)
+- `refresh`: Update interval in seconds (default: 0 = no refresh). Can be integer or float (e.g., `1`, `0.5`, `2.5`)
 - `align`: Image alignment - `left`, `center` (default), or `right`
 
 **Notes:**
 - If only width or height is specified, aspect ratio is preserved
 - Supports common formats: PNG, JPEG, GIF, etc.
+
+#### `<qrcode>` - QR Code Display
+Generates and displays a QR code from text, URL, or command output. Requires the `qrcode` Python library (installed by default on Batocera).
+
+```xml
+<!-- Static QR code from URL -->
+<qrcode display="https://batocera.org" width="150" height="150" />
+
+<!-- Static QR code from text -->
+<qrcode display="Hello World" />
+
+<!-- Dynamic QR code from command -->
+<qrcode display="${echo https://example.com/status}" refresh="1" />
+```
+
+**Attributes:**
+- `display`: Text, URL, or `${command}` that returns data to encode as QR code
+- `width`: QR code width in pixels (optional, default: 200)
+- `height`: QR code height in pixels (optional, default: 200)
+- `refresh`: Update interval in seconds (default: 0 = no refresh). Can be integer or float (e.g., `1`, `0.5`, `2.5`)
+- `align`: QR code alignment - `left`, `center` (default), or `right`
+
+**Notes:**
+- Requires `qrcode` Python library (already installed on Batocera)
+- QR codes are generated as black on white background
+- QR codes are always square - if only width or height is specified, both dimensions will use that value
+- If neither width nor height is specified, defaults to 200x200 pixels
+- Useful for sharing URLs, WiFi credentials, or dynamic status information
+
+#### `<pdf>` - PDF/Image Viewer Button
+Creates a button that opens a fullscreen viewer for PDFs or images.
+
+```xml
+<!-- View a local PDF -->
+<pdf name="View Manual" display="/usr/share/docs/manual.pdf" />
+
+<!-- View an image -->
+<pdf name="View Screenshot" display="/tmp/screenshot.png" />
+
+<!-- View from URL -->
+<pdf name="Online Doc" display="https://example.com/document.pdf" />
+
+<!-- Dynamic path from command -->
+<pdf name="Latest Log" display="${find /var/log -name '*.pdf' | head -1}" />
+```
+
+**Attributes:**
+- `name`: Button label text (required)
+- `display`: File path or URL to PDF/image (required). Can be `${command}` for dynamic paths
+- `align`: Button alignment - `left`, `center` (default), or `right`
+
+**Supported formats:**
+- **PDF**: Requires `pdftoppm` and `pdfinfo` (from poppler-utils package)
+  - Multi-page navigation with Previous/Next buttons
+  - Gamepad: Left/Right or A button to navigate, B to close
+- **Images**: JPG, PNG, GIF, and other formats supported by GdkPixbuf
+  - Gamepad: A or B button to close
+
+**Notes:**
+- Opens in fullscreen overlay window
+- PDFs are rendered at 150 DPI for good quality
+- Images are automatically scaled to fit screen
+- Supports both local files and HTTP/HTTPS URLs
+- Requires `pdftoppm` and `pdfinfo` commands (usually pre-installed on Batocera)
+
+### Refresh Behavior
+
+By default, elements do not refresh automatically (`refresh="0"`). This reduces CPU usage for static content. For dynamic elements that need periodic updates, explicitly set a refresh interval in seconds (e.g., `refresh="1"` or `refresh="0.5"`).
+
+**Elements that typically need refresh:**
+- System information (CPU usage, memory, temperature)
+- Time displays
+- Running game information
+- Volume levels
+- Toggle states that can change externally
+- Dynamic QR codes (e.g., for changing URLs or status)
+
+**Elements that don't need refresh:**
+- Static text and labels
+- Buttons (they execute commands on click)
+- Choice options
+- Static images and QR codes
+
+**Example:**
+```xml
+<!-- Static text - no refresh needed -->
+<text display="System Settings" />
+
+<!-- Dynamic CPU usage - refresh every second -->
+<text display="${top -bn1 | grep 'Cpu(s)' | awk '{print $2}'}%" refresh="1" />
+
+<!-- Fast refresh for time display (twice per second) -->
+<text display="${date +'%H:%M:%S.%N' | cut -c1-12}" refresh="0.5" />
+
+<!-- Volume that updates when buttons are clicked - needs refresh to show external changes -->
+<text display="${batocera-audio getSystemVolume}%" refresh="1" />
+
+<!-- Static QR code - no refresh needed -->
+<qrcode display="https://batocera.org" width="150" height="150" />
+
+<!-- Dynamic QR code that updates every 5 seconds -->
+<qrcode display="${echo http://192.168.1.1:8080/status}" refresh="5" />
+
+<!-- Slow refresh for less critical info (every 2.5 seconds) -->
+<text display="${uptime -p}" refresh="2.5" />
+```
 
 ### Layout Examples
 
@@ -225,10 +390,10 @@ Shows an image from a file, URL, or command output.
 ```xml
 <vgroup role="header">
   <feature name="Time">
-    <text display="${date +'%H:%M:%S'}" />
+    <text display="${date +'%H:%M:%S'}" refresh="1" />
   </feature>
   <feature display="CPU">
-    <text display="${top -bn1 | grep 'Cpu(s)' | awk '{print $2}'}%" />
+    <text display="${top -bn1 | grep 'Cpu(s)' | awk '{print $2}'}%" refresh="1" />
   </feature>
 </vgroup>
 ```
@@ -240,14 +405,15 @@ Shows an image from a file, URL, or command output.
   <vgroup>
     <feature>
       <button display="Vol -" action="batocera-audio setSystemVolume -5" />
-      <text display="${batocera-audio getSystemVolume}%" />
+      <text display="${batocera-audio getSystemVolume}%" refresh="1" />
       <button display="Vol +" action="batocera-audio setSystemVolume +5" />
     </feature>
     <feature display="Mute Sound">
-      <toggle 
+      <toggle
         value="${batocera-audio getSystemMute}"
         action_on="batocera-audio setSystemVolume mute"
-        action_off="batocera-audio setSystemVolume unmute" />
+        action_off="batocera-audio setSystemVolume unmute"
+        refresh="1" />
     </feature>
   </vgroup>
 </hgroup>
@@ -259,10 +425,22 @@ Shows an image from a file, URL, or command output.
 <hgroup display="Power Parameters">
   <vgroup>
     <feature display="Power Mode">
-      <text display="${cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor}" />
+      <text display="${cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor}" refresh="1" />
       <choice display="Performance" action="cpufreq-set -g performance" />
       <choice display="Powersave" action="cpufreq-set -g powersave" />
       <choice display="Ondemand" action="cpufreq-set -g ondemand" />
+    </feature>
+  </vgroup>
+</hgroup>
+```
+
+#### Network Information with QR Code
+
+```xml
+<hgroup display="Network Info">
+  <vgroup>
+    <feature display="ES Web Interface">
+      <qrcode display="${echo http://$(hostname -s | awk '{print $1}'):1234}" width="150" height="150" refresh="5" />
     </feature>
   </vgroup>
 </hgroup>
@@ -407,7 +585,7 @@ Supported controllers: Xbox, PlayStation, and most standard gamepads.
 ## Window Behavior
 
 ### Sizing
-- Width: 64% of screen width
+- Width: 70% of screen width
 - Height: Automatically sized to content, up to 70% of screen height
 - Content is scrollable if it exceeds the maximum height
 
