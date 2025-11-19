@@ -13,6 +13,9 @@ import gi
 gi.require_version('Gtk', '3.0'); gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, Pango
 
+# Activate for some verbose message on tricky parts of the code
+DEBUG = False
+
 # Optional evdev for gamepad
 try:
     from evdev import InputDevice, categorize, ecodes, list_devices
@@ -718,14 +721,21 @@ class UICore:
         self._about_to_show_dialog = False
 
         def on_focus_out(_w, ev):
-            # If we're about to show a dialog, ignore this focus-out
-            if self._about_to_show_dialog:
-                # print(f"DEBUG: About to show dialog, ignoring focus-out")
+            # If we're about to show a dialog or have one open, ignore this focus-out
+            if self._about_to_show_dialog or self._dialog_open:
+                if DEBUG:
+                    print(f"DEBUG: Dialog open or about to show, ignoring focus-out")
                 return False
 
             # Otherwise, close after a delay
             def check_and_close():
-                # print(f"DEBUG: Focus lost, closing")
+                # Double-check that no dialog opened during the delay
+                if self._dialog_open:
+                    if DEBUG:
+                        print(f"DEBUG: Dialog opened during delay, not closing")
+                    return False
+                if DEBUG:
+                    print(f"DEBUG: Focus lost, closing")
                 self.quit()
                 return False
 
@@ -2566,7 +2576,8 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
     def on_dialog_focus_out(*_):
         def check_and_close():
             if not dialog.is_active():
-                # print(f"DEBUG: Confirm dialog lost focus, closing everything")
+                if DEBUG:
+                    print(f"DEBUG: Confirm dialog lost focus, closing everything")
                 core.quit()
             return False
         GLib.timeout_add(100, check_and_close)
@@ -2724,7 +2735,8 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
     def on_dialog_focus_out(*_):
         def check_and_close():
             if not dialog.is_active():
-                # print(f"DEBUG: Choice dialog lost focus, closing everything")
+                if DEBUG:
+                    print(f"DEBUG: Choice dialog lost focus, closing everything")
                 core.quit()
             return False
         GLib.timeout_add(100, check_and_close)
