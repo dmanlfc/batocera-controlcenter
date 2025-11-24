@@ -24,15 +24,6 @@ try:
 except Exception:
     EVDEV_AVAILABLE = False
 
-# Optional gtk-layer-shell for Wayland compositors (Sway/labwc)
-LAYER_SHELL_AVAILABLE = False
-try:
-    gi.require_version('GtkLayerShell', '0.1')
-    from gi.repository import GtkLayerShell
-    LAYER_SHELL_AVAILABLE = True
-except Exception:
-    LAYER_SHELL_AVAILABLE = False
-
 from refresh import RefreshTask, DEFAULT_REFRESH_SEC, Debouncer
 from shell import run_shell_capture, normalize_bool_str, get_primary_geometry, expand_command_string
 
