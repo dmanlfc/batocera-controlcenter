@@ -109,7 +109,6 @@ def _focus_widget(widget: Gtk.Widget):
     except Exception:
         pass
 
-
 def _activate_widget(widget: Gtk.Widget):
     if isinstance(widget, Gtk.Button):
         try:
@@ -129,6 +128,7 @@ class UICore:
         self.focus_rows: list[Gtk.EventBox] = []
         self.focus_index: int = 0
         self.refreshers: list[RefreshTask] = []
+        self.refresh_seq = 1
         self.debouncer = Debouncer(ACTION_DEBOUNCE_MS)
         self._gamepads = GamePads()
         self._inactivity_timer_id = None
@@ -548,13 +548,16 @@ class UICore:
     def stop_refresh(self):
         for r in self.refreshers:
             r.stop()
+        self.refresh_seq = self.refresh_seq+1 # change the sequence to stop the current calls (not a boolean to be sure 2 doesn't start at the same time)
 
     def start_refresh(self):
         for r in self.refreshers:
             r.start()
 
         # Start periodic updates for conditional widgets
-        def update_conditional_widgets():
+        def update_conditional_widgets(cond_seq):
+            if cond_seq != self.refresh_seq:
+                return False
             for widget, condition in self._conditional_widgets:
                 try:
                     should_show = evaluate_if_condition(condition, self.rendered_ids)
@@ -567,7 +570,7 @@ class UICore:
             return True  # Continue calling
 
         # Update every 500ms
-        GLib.timeout_add(500, update_conditional_widgets)
+        GLib.timeout_add(500, update_conditional_widgets, self.refresh_seq)
 
     def quit(self, *_a):
         if self.quit_mode == "hide":
