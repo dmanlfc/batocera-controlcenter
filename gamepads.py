@@ -8,12 +8,6 @@
 #
 # YOU MUST KEEP THIS HEADER AS IT IS
 
-# TODO
-# read config from es for mapping
-# axis : read and reput at center each time
-# axis : full axis
-# configurable mapping
-
 import time
 import pyudev
 from evdev import InputDevice, ecodes
