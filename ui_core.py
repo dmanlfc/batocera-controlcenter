@@ -64,18 +64,6 @@ def evaluate_if_condition(condition: str, rendered_ids: set[str]) -> bool:
     # Unknown format - default to True to avoid hiding content
     return True
 
-def should_render_element(element, rendered_ids: set[str]) -> bool:
-    """
-    Check if an element should be rendered based on its 'if' attribute.
-    Note: IDs are NOT registered here - they're registered when content is actually produced.
-    """
-    # Check if condition
-    if_condition = element.attrs.get("if", "").strip()
-    if if_condition and not evaluate_if_condition(if_condition, rendered_ids):
-        return False
-
-    return True
-
 def register_element_id(element, rendered_ids: set[str], core=None):
     """Register an element's ID after it has been rendered with content."""
     element_id = element.attrs.get("id", "").strip()
@@ -128,7 +116,6 @@ class UICore:
         self.focus_rows: list[Gtk.EventBox] = []
         self.focus_index: int = 0
         self.refreshers: list[RefreshTask] = []
-        self.refresh_seq = 1
         self.debouncer = Debouncer(ACTION_DEBOUNCE_MS)
         self._gamepads = GamePads()
         self._inactivity_timer_id = None
@@ -473,7 +460,17 @@ class UICore:
                 old_ctx.remove_class("choice-selected")
 
                 # Move to new item
-                row._item_index = item_index - 1
+                # first find the first visible
+                tmp_idx = item_index - 1
+                while tmp_idx > 0 and row._items[tmp_idx].is_visible() == False:
+                    tmp_idx = tmp_idx-1
+
+                # reset to the initial one if none is found
+                if row._items[tmp_idx].is_visible() == False:
+                    tmp_idx = item_index
+
+                # set the new one
+                row._item_index = tmp_idx
                 item = row._items[row._item_index]
 
                 # Highlight new item
@@ -502,7 +499,17 @@ class UICore:
                 old_ctx.remove_class("choice-selected")
 
                 # Move to new item
-                row._item_index = item_index + 1
+                # first find the first visible
+                tmp_idx = item_index + 1
+                while tmp_idx < len(row._items)-1 and row._items[tmp_idx].is_visible() == False:
+                    tmp_idx = tmp_idx+1
+
+                # reset to the initial one if none is found
+                if row._items[tmp_idx].is_visible() == False:
+                    tmp_idx = item_index
+
+                # set the new one
+                row._item_index = tmp_idx
                 item = row._items[row._item_index]
 
                 # Highlight new item
@@ -548,29 +555,20 @@ class UICore:
     def stop_refresh(self):
         for r in self.refreshers:
             r.stop()
-        self.refresh_seq = self.refresh_seq+1 # change the sequence to stop the current calls (not a boolean to be sure 2 doesn't start at the same time)
 
     def start_refresh(self):
         for r in self.refreshers:
             r.start()
 
-        # Start periodic updates for conditional widgets
-        def update_conditional_widgets(cond_seq):
-            if cond_seq != self.refresh_seq:
-                return False
-            for widget, condition in self._conditional_widgets:
-                try:
-                    should_show = evaluate_if_condition(condition, self.rendered_ids)
-                    if DEBUG:
-                        print(f"DEBUG: Conditional widget check: {condition} -> {should_show}, IDs: {self.rendered_ids}")
-                    widget.set_visible(should_show)
-                except Exception as e:
-                    if DEBUG:
-                        print(f"DEBUG: Error updating conditional widget: {e}")
-            return True  # Continue calling
-
-        # Update every 500ms
-        GLib.timeout_add(500, update_conditional_widgets, self.refresh_seq)
+        for widget, condition in self._conditional_widgets:
+            try:
+                should_show = evaluate_if_condition(condition, self.rendered_ids)
+                if DEBUG:
+                    print(f"DEBUG: Conditional widget check: {condition} -> {should_show}, IDs: {self.rendered_ids}")
+                widget.set_visible(should_show)
+            except Exception as e:
+                if DEBUG:
+                    print(f"DEBUG: Error updating conditional widget: {e}")
 
     def quit(self, *_a):
         if self.quit_mode == "hide":
@@ -592,7 +590,6 @@ class UICore:
                 pass
 
     def _handle_gamepad_action_call(self, action: str):
-        print(f"gamepad action: {action}")
         self._handle_gamepad_action(action)
 
     def start_gamepad(self):
@@ -721,7 +718,7 @@ class UICore:
 
         # Handle dynamic visibility for id() and !id() conditions
         if_condition = (sub.attrs.get("if", "") or "").strip()
-        if if_condition and (if_condition.startswith("id(") or if_condition.startswith("!id(")):
+        if if_condition:
             # Track this widget for dynamic visibility updates
             self._conditional_widgets.append((lbl, if_condition))
             # Initially hide, will be shown after IDs are registered
@@ -961,6 +958,14 @@ class UICore:
             tab_btn.set_halign(Gtk.Align.CENTER)
 
         (row_box.pack_end if pack_end else row_box.pack_start)(tab_btn, False, False, 3)
+
+        # Handle dynamic visibility for id() and !id() conditions
+        if_condition = (sub.attrs.get("if", "") or "").strip()
+        if if_condition:
+            # Track this widget for dynamic visibility updates
+            self._conditional_widgets.append((tab_btn, if_condition))
+            # Initially hide, will be shown after IDs are registered
+            tab_btn.set_visible(False)
 
         # Register ID for tabs (they always produce visual content)
         register_element_id(sub, self.rendered_ids)
@@ -1311,8 +1316,6 @@ def ui_build_containers(core: UICore, xml_root):
     header_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
     for child in xml_root.children:
         if child.kind == "vgroup" and (child.attrs.get("role", "") or "").strip().lower() == "header":
-            if not should_render_element(child, core.rendered_ids):
-                continue
             row = _build_vgroup_row(core, child, is_header=True)
             if row:
                 header_box.pack_start(row, False, False, 0)
@@ -1364,17 +1367,12 @@ def ui_build_containers(core: UICore, xml_root):
             # Skip header and footer vgroups (they're processed separately)
             if role in ("header", "footer"):
                 continue
-            if not should_render_element(child, core.rendered_ids):
-                continue
             vg = _build_vgroup_row(core, child, is_header=False)
             if vg:
                 content_box.pack_start(vg, False, False, 0)
         elif child.kind == "hgroup":
             hgroup_id = (child.attrs.get("name", "") or child.attrs.get("display", "")).strip()
             is_tab_content = hgroup_id in tab_targets
-
-            if not should_render_element(child, core.rendered_ids):
-                continue
 
             title = (child.attrs.get("display", "") or "").strip()
             target = _get_group_container_new(core, content_box, title)
@@ -1391,15 +1389,13 @@ def ui_build_containers(core: UICore, xml_root):
                         tab_row._content_box = content_box
 
             # Process all children
-            has_multiple_vgroups_or_hgroups = sum(1 for s in child.children if s.kind in ("vgroup", "hgroup") and should_render_element(s, core.rendered_ids)) > 1
+            has_multiple_vgroups_or_hgroups = sum(1 for s in child.children if s.kind in ("vgroup", "hgroup")) > 1
 
             if has_multiple_vgroups_or_hgroups:
                 # For tab content, stack vgroups/hgroups vertically; otherwise arrange horizontally
                 if is_tab_content:
                     # Vertical stacking for tab content
                     for sub in child.children:
-                        if not should_render_element(sub, core.rendered_ids):
-                            continue
                         if sub.kind == "vgroup":
                             vg = _build_vgroup_row(core, sub, is_header=False)
                             if vg:
@@ -1418,8 +1414,6 @@ def ui_build_containers(core: UICore, xml_root):
 
                             # Process nested hgroup children
                             for nested_sub in sub.children:
-                                if not should_render_element(nested_sub, core.rendered_ids):
-                                    continue
                                 if nested_sub.kind == "text":
                                     text_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
                                     core.build_text(sub, nested_sub, text_box, align_end=False)
@@ -1459,8 +1453,6 @@ def ui_build_containers(core: UICore, xml_root):
                     target.pack_start(horiz_box, False, False, 0)
 
                     for sub in child.children:
-                        if not should_render_element(sub, core.rendered_ids):
-                            continue
                         if sub.kind == "vgroup":
                             vg = _build_vgroup_row(core, sub, is_header=False)
                             if vg:
@@ -1481,8 +1473,6 @@ def ui_build_containers(core: UICore, xml_root):
                                 vert_box.pack_start(title_label, False, False, 0)
 
                             for nested_sub in sub.children:
-                                if not should_render_element(nested_sub, core.rendered_ids):
-                                    continue
                                 if nested_sub.kind == "vgroup":
                                     vg = _build_vgroup_row(core, nested_sub, is_header=False)
                                     if vg:
@@ -1525,8 +1515,6 @@ def ui_build_containers(core: UICore, xml_root):
                                 horiz_box.pack_start(fr, True, True, 6)
             else:
                 for sub in child.children:
-                    if not should_render_element(sub, core.rendered_ids):
-                        continue
                     if sub.kind == "vgroup":
                         vg = _build_vgroup_row(core, sub, is_header=False)
                         if vg:
@@ -1594,8 +1582,6 @@ def ui_build_containers(core: UICore, xml_root):
     footer_box.set_halign(Gtk.Align.CENTER)
     for child in xml_root.children:
         if child.kind == "vgroup" and (child.attrs.get("role", "") or "").strip().lower() == "footer":
-            if not should_render_element(child, core.rendered_ids):
-                continue
             row = _build_vgroup_row(core, child, is_header=True)
             if row:
                 footer_box.pack_start(row, False, False, 0)
@@ -1670,7 +1656,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
     # Group consecutive text children into a single vertical cell
     i = 0
-    children_to_process = [c for c in vg.children if should_render_element(c, core.rendered_ids)]
+    children_to_process = vg.children
 
     while i < len(children_to_process):
         child = children_to_process[i]
@@ -1759,10 +1745,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
             # Process nested vgroup's children inline
             for nested_child in child.children:
-                # Check if this child should be rendered
-                if not should_render_element(nested_child, core.rendered_ids):
-                    continue
-
                 # Handle direct text/img/qrcode children in nested vgroup
                 if nested_child.kind == "text":
                     core.build_text(child, nested_child, cell_box, align_end=False)
@@ -1786,8 +1768,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
                     # Add feature children inline
                     for sub in nested_child.children:
-                        if not should_render_element(sub, core.rendered_ids):
-                            continue
                         if sub.kind == "text":
                             core.build_text(nested_child, sub, cell_box, align_end=False)
                         elif sub.kind == "img":
@@ -1816,10 +1796,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
             # Process hgroup children (features, text, img, etc.)
             for hg_child in child.children:
-                # Check if this child should be rendered
-                if not should_render_element(hg_child, core.rendered_ids):
-                    continue
-
                 if hg_child.kind == "feature":
                     feat_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
@@ -1834,8 +1810,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
                     # Add feature children
                     for sub in hg_child.children:
-                        if not should_render_element(sub, core.rendered_ids):
-                            continue
                         if sub.kind == "text":
                             core.build_text(hg_child, sub, feat_box, align_end=False)
                         elif sub.kind == "img":
@@ -1916,10 +1890,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
         cell_controls: list[Gtk.Widget] = []
         for sub in child.children:
-            # Check if this sub-element should be rendered
-            if not should_render_element(sub, core.rendered_ids):
-                continue
-
             if sub.kind == "text":
                 core.build_text(child, sub, cell_box, align_end=False)
             elif sub.kind == "img":
@@ -1930,8 +1900,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 # Nested hgroup in feature - create vertical layout
                 nested_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
                 for hg_child in sub.children:
-                    if not should_render_element(hg_child, core.rendered_ids):
-                        continue
                     if hg_child.kind == "text":
                         core.build_text(child, hg_child, nested_box, align_end=False)
                     elif hg_child.kind == "button":
@@ -2172,10 +2140,6 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     row._item_index = 0
 
     for sub in feat.children:
-        # Check if this sub-element should be rendered
-        if not should_render_element(sub, core.rendered_ids):
-            continue
-
         kind = sub.kind
 
         if kind == "button":
@@ -2226,7 +2190,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
 
             # Handle dynamic visibility for id() and !id() conditions
             if_condition = (sub.attrs.get("if", "") or "").strip()
-            if if_condition and (if_condition.startswith("id(") or if_condition.startswith("!id(")):
+            if if_condition:
                 # Track this widget for dynamic visibility updates
                 core._conditional_widgets.append((lbl, if_condition))
                 # Initially hide, will be shown after IDs are registered
@@ -2306,8 +2270,6 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             nested_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
             row_box.pack_start(nested_box, False, False, 8)
             for hg_child in sub.children:
-                if not should_render_element(hg_child, core.rendered_ids):
-                    continue
                 if hg_child.kind == "text":
                     core.build_text(feat, hg_child, nested_box, align_end=False)
                 elif hg_child.kind == "button":
