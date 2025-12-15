@@ -16,6 +16,9 @@ from gi.repository import Gtk, Gdk, GLib, Pango
 from gamepads import GamePads
 from PdfViewer import PdfViewer
 
+import locale
+_ = locale.gettext
+
 # Activate for some verbose message on tricky parts of the code
 DEBUG = False
 
@@ -863,7 +866,7 @@ class UICore:
     def build_button(self, parent_feat, sub, row_box, pack_end=False):
         text = (sub.attrs.get("display", "") or "Button").strip()
         action = sub.attrs.get("action", "")
-        btn = Gtk.Button.new_with_label(text)
+        btn = Gtk.Button.new_with_label(_(text))
         btn.get_style_context().add_class("cc-button")
         btn.set_can_focus(True)
 
@@ -912,7 +915,7 @@ class UICore:
         if is_cmd(tbtn_label):
             tbtn_label = ""
 
-        tbtn = Gtk.ToggleButton.new_with_label(tbtn_label)
+        tbtn = Gtk.ToggleButton.new_with_label(_(tbtn_label))
         tbtn.get_style_context().add_class("cc-toggle")
         tbtn.set_focus_on_click(True)
 
@@ -930,9 +933,9 @@ class UICore:
         # Update toggle label to show ON/OFF status
         def update_toggle_label():
             if tbtn.get_active():
-                tbtn.set_label("ON")
+                tbtn.set_label(_("ON"))
             else:
-                tbtn.set_label("OFF")
+                tbtn.set_label(_("OFF"))
 
         # Track if we're currently updating from user action to prevent refresh conflicts
         toggle_state = {"updating": False, "last_user_change": 0}
@@ -1001,7 +1004,7 @@ class UICore:
         target = (sub.attrs.get("target", "") or "").strip()
 
         # Tab is a toggle button that looks selected when active
-        tab_btn = Gtk.ToggleButton.new_with_label(text)
+        tab_btn = Gtk.ToggleButton.new_with_label(_(text))
         tab_btn.get_style_context().add_class("cc-tab")
         tab_btn.set_can_focus(True)
 
@@ -1050,7 +1053,7 @@ class UICore:
                 # Don't render button if display is empty
                 return None
 
-        btn = Gtk.Button.new_with_label(name)
+        btn = Gtk.Button.new_with_label(_(name))
         btn.get_style_context().add_class("cc-button")
         btn.set_can_focus(True)
 
@@ -1462,7 +1465,7 @@ def ui_build_containers(core: UICore, xml_root):
                             # Add title if present
                             hgroup_title = (sub.attrs.get("display", "") or sub.attrs.get("name", "")).strip()
                             if hgroup_title:
-                                title_label = Gtk.Label(label=hgroup_title)
+                                title_label = Gtk.Label(label=_(hgroup_title))
                                 title_label.get_style_context().add_class("group-title")
                                 title_label.set_xalign(0.0)
                                 vert_box.pack_start(title_label, False, False, 0)
@@ -1522,7 +1525,7 @@ def ui_build_containers(core: UICore, xml_root):
                             # Add title if present
                             hgroup_title = (sub.attrs.get("display", "") or sub.attrs.get("name", "")).strip()
                             if hgroup_title:
-                                title_label = Gtk.Label(label=hgroup_title)
+                                title_label = Gtk.Label(label=_(hgroup_title))
                                 title_label.get_style_context().add_class("group-title")
                                 title_label.set_xalign(0.0)
                                 vert_box.pack_start(title_label, False, False, 0)
@@ -1683,7 +1686,7 @@ def _get_group_container_new(core: UICore, parent_box: Gtk.Box, display_title: s
     frame.set_halign(Gtk.Align.CENTER)  # Center the frame
     # Set a consistent width for all groups (90% of window width)
     frame.set_size_request(int(core._window_width * 0.95), -1)
-    label = Gtk.Label(label=title)
+    label = Gtk.Label(label=_(title))
     label.get_style_context().add_class("group-title")
     frame.set_label_widget(label)
     inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -1812,7 +1815,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 if nested_child.kind == "feature":
                     label_text = (nested_child.attrs.get("display", "") or nested_child.attrs.get("name", "") or "").strip()
                     if label_text:
-                        lbl = Gtk.Label(label=label_text)
+                        lbl = Gtk.Label(label=_(label_text))
                         lbl.get_style_context().add_class("item-text")
                         lbl.set_xalign(0.0)
                         cell_box.pack_start(lbl, False, False, 0)
@@ -1854,7 +1857,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
                     label_text = (hg_child.attrs.get("display", "") or hg_child.attrs.get("name", "") or "").strip()
                     if label_text:
-                        lbl = Gtk.Label(label=label_text)
+                        lbl = Gtk.Label(label=_(label_text))
                         lbl.get_style_context().add_class("item-text")
                         lbl.set_xalign(0.0)
                         feat_box.pack_start(lbl, False, False, 0)
@@ -1882,7 +1885,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                         elif sub.kind == "button_confirm":
                             text = (sub.attrs.get("display", "") or "Confirm?").strip()
                             action = sub.attrs.get("action", "")
-                            btn = Gtk.Button.new_with_label(text)
+                            btn = Gtk.Button.new_with_label(_(text))
                             btn.get_style_context().add_class("cc-button")
                             btn.get_style_context().add_class("cc-button-confirm")
                             btn.set_can_focus(True)
@@ -1936,7 +1939,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
         label_text = (child.attrs.get("display", "") or child.attrs.get("name", "") or "").strip()
         if label_text:
-            lbl = Gtk.Label(label=label_text)
+            lbl = Gtk.Label(label=_(label_text))
             lbl.get_style_context().add_class("header" if is_header_row else "item-text")
             # Don't ellipsize - let text show fully
             lbl.set_xalign(0.0)
@@ -1969,7 +1972,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                     elif hg_child.kind == "button_confirm":
                         text = (hg_child.attrs.get("display", "") or "Confirm?").strip()
                         action = hg_child.attrs.get("action", "")
-                        btn = Gtk.Button.new_with_label(text)
+                        btn = Gtk.Button.new_with_label(_(text))
                         btn.get_style_context().add_class("cc-button")
                         btn.get_style_context().add_class("cc-button-confirm")
                         btn.set_can_focus(True)
@@ -1995,7 +1998,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             elif sub.kind == "button_confirm":
                 text = (sub.attrs.get("display", "") or "Confirm?").strip()
                 action = sub.attrs.get("action", "")
-                btn = Gtk.Button.new_with_label(text)
+                btn = Gtk.Button.new_with_label(_(text))
                 btn.get_style_context().add_class("cc-button")
                 btn.get_style_context().add_class("cc-button-confirm")
                 btn.set_can_focus(True)
@@ -2020,7 +2023,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 _open_choice_popup(_core, _label, _choices)
                 _core._about_to_show_dialog = False
 
-            choice_btn = Gtk.Button.new_with_label("Select")
+            choice_btn = Gtk.Button.new_with_label(_("Select"))
             choice_btn.get_style_context().add_class("cc-button")
             choice_btn.get_style_context().add_class("cc-choice")
             choice_btn.set_can_focus(True)
@@ -2179,7 +2182,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
 
     # Only add label and spacer if feature has a display label
     if display_label:
-        name_lbl = Gtk.Label(label=display_label)
+        name_lbl = Gtk.Label(label=_(display_label))
         name_lbl.set_xalign(0.0)
         name_lbl.get_style_context().add_class("item-text")
         name_lbl.set_width_chars(15)  # Fixed width for label
@@ -2201,7 +2204,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
         if kind == "button":
             text = (sub.attrs.get("display", "") or "Button").strip()
             action = sub.attrs.get("action", "")
-            btn = Gtk.Button.new_with_label(text)
+            btn = Gtk.Button.new_with_label(_(text))
             btn.get_style_context().add_class("cc-button")
             btn.set_can_focus(True)
             btn.set_size_request(70, -1)  # Fixed width for buttons
@@ -2212,7 +2215,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
         elif kind == "button_confirm":
             text = (sub.attrs.get("display", "") or "Confirm?").strip()
             action = sub.attrs.get("action", "")
-            btn = Gtk.Button.new_with_label(text)
+            btn = Gtk.Button.new_with_label(_(text))
             btn.get_style_context().add_class("cc-button")
             btn.get_style_context().add_class("cc-button-confirm")
             btn.set_can_focus(True)
@@ -2337,7 +2340,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
                 elif hg_child.kind == "button_confirm":
                     text = (hg_child.attrs.get("display", "") or "Confirm?").strip()
                     action = hg_child.attrs.get("action", "")
-                    btn = Gtk.Button.new_with_label(text)
+                    btn = Gtk.Button.new_with_label(_(text))
                     btn.get_style_context().add_class("cc-button")
                     btn.get_style_context().add_class("cc-button-confirm")
                     btn.set_can_focus(True)
@@ -2365,7 +2368,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             _open_choice_popup(core, display_label, choices)
             core._about_to_show_dialog = False
 
-        choice_btn = Gtk.Button.new_with_label("Select")
+        choice_btn = Gtk.Button.new_with_label(_("Select"))
         choice_btn.get_style_context().add_class("cc-button")
         choice_btn.get_style_context().add_class("cc-choice")
         choice_btn.set_can_focus(True)
@@ -2565,7 +2568,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
         inner.set_border_width(20)
     frame.add(inner)
 
-    label = Gtk.Label(label=message)
+    label = Gtk.Label(label=_(message))
     label.set_xalign(0.5)
     label.set_line_wrap(True)
     label.get_style_context().add_class("item-text")
@@ -2579,7 +2582,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
     buttons = []
     current_btn = [0]  # 0 = Cancel (default), 1 = Confirm
 
-    cancel_btn = Gtk.Button.new_with_label("Cancel")
+    cancel_btn = Gtk.Button.new_with_label(_("Cancel"))
     cancel_btn.get_style_context().add_class("cc-button")
     if core._scale_class == "small":
         cancel_btn.set_size_request(80, -1)
@@ -2590,7 +2593,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str):
     cancel_btn.connect("clicked", lambda _: dialog.destroy())
     buttons.append(cancel_btn)
 
-    confirm_btn = Gtk.Button.new_with_label("Confirm")
+    confirm_btn = Gtk.Button.new_with_label(_("Confirm"))
     confirm_btn.get_style_context().add_class("cc-button")
     if core._scale_class == "small":
         cancel_btn.set_size_request(80, -1)
@@ -2732,7 +2735,7 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
         inner.set_border_width(20)
     frame.add(inner)
 
-    label = Gtk.Label(label=f"Choose {feature_label}:")
+    label = Gtk.Label(label=_(feature_label) + ":")
     label.set_xalign(0.5)  # Center the label
     label.get_style_context().add_class("group-title")
     inner.pack_start(label, False, False, 15)
@@ -2793,7 +2796,7 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
         display = (choice.attrs.get("display", "") or "Option").strip()
         action = choice.attrs.get("action", "")
 
-        btn = Gtk.Button.new_with_label(display)
+        btn = Gtk.Button.new_with_label(_(display))
         btn.set_can_focus(True)
         btn.get_style_context().add_class("choice-option")
         choice_box.pack_start(btn, False, False, 0)

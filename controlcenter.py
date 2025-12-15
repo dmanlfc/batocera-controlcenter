@@ -29,6 +29,8 @@ from gi.repository import Gtk
 from xml_utils import parse_xml, validate_xml
 from ui_core import ControlCenterApp
 
+import locale
+
 def ensure_display():
     return bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
 
@@ -40,6 +42,9 @@ def gtk_init_check():
         return False
 
 def main():
+    locale.bindtextdomain('controlcenter', None)
+    locale.textdomain('controlcenter')
+
     # Will be set after app is created
     app_instance = [None]
 
