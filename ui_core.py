@@ -608,7 +608,7 @@ class UICore:
         if len(self.window._tab_row._tabs) == 0:
             return
         n = 0
-        while self.window._tab_row._tabs[n].is_visible() == False and n < len(self.window._tab_row._tabs):
+        while n < len(self.window._tab_row._tabs) and not self.window._tab_row._tabs[n].is_visible():
             n = n+1
         if n < len(self.window._tab_row._tabs):
             self.window._tab_row._tabs[n].set_active(True)
