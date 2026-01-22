@@ -65,11 +65,24 @@ def evaluate_if_condition(condition: str, rendered_ids: set[str]) -> bool:
         if not cmd:
             return False
         result = run_shell_capture(cmd)
-        # avoid extra .strip() allocation when checking emptiness
-        return bool(result) and bool(result.strip())
+        # Treat "null" as empty result (common in shell commands)
+        result_clean = result.strip()
+        if result_clean.lower() == "null":
+            result_clean = ""
+        return bool(result) and bool(result_clean)
 
     # Unknown format - default to True to avoid hiding content
     return True
+
+def should_render_element(element, rendered_ids: set[str]) -> bool:
+    """
+    Check if an element should be rendered based on its 'if' attribute.
+    """
+    if_condition = element.attrs.get("if", "").strip()
+    if not if_condition:
+        return True  # No condition = always render
+    
+    return evaluate_if_condition(if_condition, rendered_ids)
 
 def register_element_id(element, rendered_ids: set[str], core=None):
     """Register an element's ID after it has been rendered with content."""
@@ -1676,12 +1689,14 @@ def ui_build_containers(core: UICore, xml_root):
     tab_row = None
     for child in xml_root.children:
         if child.kind == "feature":
-            fr = _build_feature_row(core, child)
-            if fr:
-                content_box.pack_start(fr, False, False, 3)
-                # Check if this is a tab row
-                if hasattr(fr, '_tabs') and fr._tabs:
-                    tab_row = fr
+            # Check if feature should be rendered based on 'if' condition
+            if should_render_element(child, core.rendered_ids):
+                fr = _build_feature_row(core, child)
+                if fr:
+                    content_box.pack_start(fr, False, False, 3)
+                    # Check if this is a tab row
+                    if hasattr(fr, '_tabs') and fr._tabs:
+                        tab_row = fr
         elif child.kind == "vgroup":
             role = (child.attrs.get("role", "") or "").strip().lower()
             # Skip header and footer vgroups (they're processed separately)
@@ -1743,9 +1758,11 @@ def ui_build_containers(core: UICore, xml_root):
                                     core.build_img(sub, nested_sub, img_box, pack_end=False)
                                     vert_box.pack_start(img_box, False, False, 3)
                                 elif nested_sub.kind == "feature":
-                                    fr = _build_feature_row(core, nested_sub)
-                                    if fr:
-                                        vert_box.pack_start(fr, False, False, 3)
+                                    # Check if feature should be rendered based on 'if' condition
+                                    if should_render_element(nested_sub, core.rendered_ids):
+                                        fr = _build_feature_row(core, nested_sub)
+                                        if fr:
+                                            vert_box.pack_start(fr, False, False, 3)
 
                             target.pack_start(vert_box, False, False, 6)
                         elif sub.kind == "img":
@@ -1761,9 +1778,11 @@ def ui_build_containers(core: UICore, xml_root):
                             target.pack_start(text_box, False, False, 6)
                         elif sub.kind == "feature":
                             # Direct feature in tab content
-                            fr = _build_feature_row(core, sub)
-                            if fr:
-                                target.pack_start(fr, False, False, 3)
+                            # Check if feature should be rendered based on 'if' condition
+                            if should_render_element(sub, core.rendered_ids):
+                                fr = _build_feature_row(core, sub)
+                                if fr:
+                                    target.pack_start(fr, False, False, 3)
                 else:
                     # Horizontal arrangement for non-tab content
                     horiz_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -1801,11 +1820,13 @@ def ui_build_containers(core: UICore, xml_root):
                                             vg_box.set_size_request(-1, -1)
                                         vert_box.pack_start(vg, False, False, 0)
                                 elif nested_sub.kind == "feature":
-                                    fr = _build_feature_row(core, nested_sub)
-                                    if fr:
-                                        fr_box = fr.get_child()
-                                        if fr_box:
-                                            fr_box.set_size_request(-1, -1)
+                                    # Check if feature should be rendered based on 'if' condition
+                                    if should_render_element(nested_sub, core.rendered_ids):
+                                        fr = _build_feature_row(core, nested_sub)
+                                        if fr:
+                                            fr_box = fr.get_child()
+                                            if fr_box:
+                                                fr_box.set_size_request(-1, -1)
                                         vert_box.pack_start(fr, False, False, 3)
                                 elif nested_sub.kind == "text":
                                     # Direct text in nested hgroup
@@ -1830,9 +1851,11 @@ def ui_build_containers(core: UICore, xml_root):
                             horiz_box.pack_start(text_box, True, True, 6)
                         elif sub.kind == "feature":
                             # Direct feature in hgroup horizontal layout
-                            fr = _build_feature_row(core, sub)
-                            if fr:
-                                horiz_box.pack_start(fr, True, True, 6)
+                            # Check if feature should be rendered based on 'if' condition
+                            if should_render_element(sub, core.rendered_ids):
+                                fr = _build_feature_row(core, sub)
+                                if fr:
+                                    horiz_box.pack_start(fr, True, True, 6)
             else:
                 for sub in child.children:
                     if sub.kind == "vgroup":
@@ -1840,9 +1863,11 @@ def ui_build_containers(core: UICore, xml_root):
                         if vg:
                             target.pack_start(vg, False, False, 0)
                     elif sub.kind == "feature":
-                        fr = _build_feature_row(core, sub)
-                        if fr:
-                            target.pack_start(fr, False, False, 3)
+                        # Check if feature should be rendered based on 'if' condition
+                        if should_render_element(sub, core.rendered_ids):
+                            fr = _build_feature_row(core, sub)
+                            if fr:
+                                target.pack_start(fr, False, False, 3)
                     elif sub.kind == "text":
                         text_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
                         text_row.set_border_width(4)
@@ -2091,6 +2116,10 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                     continue
 
                 if nested_child.kind == "feature":
+                    # Check if feature should be rendered based on 'if' condition
+                    if not should_render_element(nested_child, core.rendered_ids):
+                        continue
+                        
                     label_text = (nested_child.attrs.get("display", "") or nested_child.attrs.get("name", "") or "").strip()
                     if label_text:
                         lbl = Gtk.Label(label=_(label_text))
@@ -2131,6 +2160,10 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             # Process hgroup children (features, text, img, etc.)
             for hg_child in child.children:
                 if hg_child.kind == "feature":
+                    # Check if feature should be rendered based on 'if' condition
+                    if not should_render_element(hg_child, core.rendered_ids):
+                        continue
+                        
                     feat_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
 
                     label_text = (hg_child.attrs.get("display", "") or hg_child.attrs.get("name", "") or "").strip()
@@ -2765,6 +2798,9 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
         row._on_left = None
         row._on_right = None
         row._on_activate = None
+
+    # Register feature ID if it has one and was successfully built
+    register_element_id(feat, core.rendered_ids, core)
 
     return row
 

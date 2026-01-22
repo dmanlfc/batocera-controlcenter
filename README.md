@@ -102,10 +102,23 @@ Controls whether an element is rendered based on a condition.
    </feature>
    ```
 
+4. **Feature-level conditionals:**
+   ```xml
+   <!-- Entire feature is hidden if condition fails -->
+   <feature display="Brightness Control" if='${printf "%s" $(batocera-brightness 2&gt;/dev/null)}'>
+     <button display="Bright -" action="batocera-brightness - 20" />
+     <text display="${batocera-brightness}%" refresh="1" />
+     <button display="Bright +" action="batocera-brightness + 20" />
+   </feature>
+   ```
+
 **Important Notes:**
 - **Order matters**: Elements are processed top-to-bottom. An element with `if="id(xxx)"` must come AFTER the element with `id="xxx"`
 - **Content-based IDs**: For `<text>` elements with commands, the ID is only registered if the command returns non-empty content
 - **Dynamic IDs**: IDs can be registered/unregistered dynamically as content changes (useful with `refresh`)
+- **Feature-level conditionals**: When applied to `<feature>` elements, the entire feature (including label and all controls) is hidden if the condition fails
+- **Performance**: Feature-level conditionals are more efficient than individual element conditionals when hiding entire sections
+- **Null handling**: Commands that return "null" (case-insensitive) are treated as empty results and will cause the condition to fail
 
 **Examples:**
 

@@ -61,7 +61,7 @@ def validate_xml(root: CCElement) -> tuple[list[str], list[str]]:
         "features": {"name"},
         "vgroup": {"name", "role", "display"},
         "hgroup": {"name", "role", "display"},
-        "feature": {"name", "group", "refresh", "display"},
+        "feature": {"name", "group", "refresh", "display", "if"},
         "text": {"display", "refresh", "align"},
         "button": {"display", "action", "refresh", "align"},
         "button_confirm": {"display", "action", "refresh", "align"},
