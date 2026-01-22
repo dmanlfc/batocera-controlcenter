@@ -156,6 +156,62 @@ class DocViewer:
         text_view.set_right_margin(20)
         text_view.set_top_margin(20)
         text_view.set_bottom_margin(20)
+
+        # Zoom functionality
+        zoom_level = [1.0]  # Current zoom level (1.0 = 100%)
+        original_pixbuf = [None]  # Store original pixbuf for images/PDFs
+        original_font_size = [14]  # Store original font size for text
+        
+        def apply_zoom():
+            """Apply current zoom level to the active content"""
+            if (is_image or is_pdf or is_cbz) and original_pixbuf[0]:
+                # Zoom image/PDF/CBZ
+                orig_width = original_pixbuf[0].get_width()
+                orig_height = original_pixbuf[0].get_height()
+                new_width = int(orig_width * zoom_level[0])
+                new_height = int(orig_height * zoom_level[0])
+                scaled_pixbuf = original_pixbuf[0].scale_simple(new_width, new_height, GdkPixbuf.InterpType.BILINEAR)
+                img.set_from_pixbuf(scaled_pixbuf)
+            elif is_text:
+                # Zoom text by changing font size
+                new_font_size = max(6, int(original_font_size[0] * zoom_level[0]))  # Minimum 6pt font
+                from gi.repository import Pango
+                font_desc = Pango.FontDescription()
+                font_desc.set_family("monospace")
+                font_desc.set_size(new_font_size * Pango.SCALE)  # Pango.SCALE is the correct multiplier
+                text_view.override_font(font_desc)
+        
+        def zoom_in():
+            """Increase zoom level"""
+            zoom_level[0] = min(zoom_level[0] * 1.2, 5.0)  # Max 500% zoom
+            apply_zoom()  # Apply zoom for all content types
+        
+        def zoom_out():
+            """Decrease zoom level"""
+            zoom_level[0] = max(zoom_level[0] / 1.2, 0.2)  # Min 20% zoom
+            apply_zoom()  # Apply zoom for all content types
+        
+        # Panning functionality for right analog stick
+        def pan_content(direction):
+            """Pan the scrolled content in the specified direction"""
+            h_adj = scrolled.get_hadjustment()
+            v_adj = scrolled.get_vadjustment()
+            
+            # Pan step size (adjust as needed)
+            pan_step = 50
+            
+            if direction == "pan_up":
+                new_value = max(v_adj.get_value() - pan_step, v_adj.get_lower())
+                v_adj.set_value(new_value)
+            elif direction == "pan_down":
+                new_value = min(v_adj.get_value() + pan_step, v_adj.get_upper() - v_adj.get_page_size())
+                v_adj.set_value(new_value)
+            elif direction == "pan_left":
+                new_value = max(h_adj.get_value() - pan_step, h_adj.get_lower())
+                h_adj.set_value(new_value)
+            elif direction == "pan_right":
+                new_value = min(h_adj.get_value() + pan_step, h_adj.get_upper() - h_adj.get_page_size())
+                h_adj.set_value(new_value)
     
         # Define close function early so it can be used by all handlers
         def close_viewer(*_):
@@ -168,7 +224,10 @@ class DocViewer:
             try:
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file(local_path)
     
-                # Scale to fit screen
+                # Store original pixbuf for zooming
+                original_pixbuf[0] = pixbuf
+    
+                # Scale to fit screen initially
                 screen_width = parent_window.get_screen().get_width()
                 screen_height = parent_window.get_screen().get_height() - 100
     
@@ -180,6 +239,8 @@ class DocViewer:
                     new_width = int(orig_width * scale)
                     new_height = int(orig_height * scale)
                     pixbuf = pixbuf.scale_simple(new_width, new_height, GdkPixbuf.InterpType.BILINEAR)
+                    # Update original pixbuf to the screen-fitted version for better zoom quality
+                    original_pixbuf[0] = pixbuf
     
                 img.set_from_pixbuf(pixbuf)
                 scrolled.add(img)
@@ -199,6 +260,12 @@ class DocViewer:
                 def img_gamepad_handler(action: str):
                     if action in ("back", "activate"):
                         close_viewer()
+                    elif action == "axis_up":
+                        zoom_in()
+                    elif action == "axis_down":
+                        zoom_out()
+                    elif action in ("pan_up", "pan_down", "pan_left", "pan_right"):
+                        pan_content(action)
                     return False
                 self._handle_gamepad_action = img_gamepad_handler
     
@@ -259,7 +326,10 @@ class DocViewer:
                             pixbuf = GdkPixbuf.Pixbuf.new_from_stream(stream, None)
                             stream.close()
     
-                            # Scale to fit screen
+                            # Store original pixbuf for zooming
+                            original_pixbuf[0] = pixbuf
+    
+                            # Scale to fit screen initially
                             screen_width = parent_window.get_screen().get_width()
                             screen_height = parent_window.get_screen().get_height() - 100  # Leave room for buttons
     
@@ -271,6 +341,14 @@ class DocViewer:
                                 new_width = int(orig_width * scale)
                                 new_height = int(orig_height * scale)
                                 pixbuf = pixbuf.scale_simple(new_width, new_height, GdkPixbuf.InterpType.BILINEAR)
+                                # Update original pixbuf to the screen-fitted version for better zoom quality
+                                original_pixbuf[0] = pixbuf
+    
+                            # Apply current zoom level
+                            if zoom_level[0] != 1.0:
+                                zoomed_width = int(pixbuf.get_width() * zoom_level[0])
+                                zoomed_height = int(pixbuf.get_height() * zoom_level[0])
+                                pixbuf = pixbuf.scale_simple(zoomed_width, zoomed_height, GdkPixbuf.InterpType.BILINEAR)
     
                             img.set_from_pixbuf(pixbuf)
                             current_page[0] = page_num
@@ -322,6 +400,14 @@ class DocViewer:
                         close_viewer()
                     elif action == "axis_left":
                         render_page(current_page[0] - 1)
+                    elif action == "axis_up":
+                        zoom_in()
+                        render_page(current_page[0])  # Re-render current page with new zoom
+                    elif action == "axis_down":
+                        zoom_out()
+                        render_page(current_page[0])  # Re-render current page with new zoom
+                    elif action in ("pan_up", "pan_down", "pan_left", "pan_right"):
+                        pan_content(action)
                     return False
                 self._handle_gamepad_action = pdf_gamepad_handler
     
@@ -377,7 +463,10 @@ class DocViewer:
                             # 4. Close the stream (data is in pixbuf now)
                             stream.close()
     
-                            # Scale to fit screen
+                            # Store original pixbuf for zooming
+                            original_pixbuf[0] = pixbuf
+    
+                            # Scale to fit screen initially
                             screen_width = parent_window.get_screen().get_width()
                             screen_height = parent_window.get_screen().get_height() - 100
                             orig_width = pixbuf.get_width()
@@ -388,6 +477,14 @@ class DocViewer:
                                 new_width = int(orig_width * scale)
                                 new_height = int(orig_height * scale)
                                 pixbuf = pixbuf.scale_simple(new_width, new_height, GdkPixbuf.InterpType.BILINEAR)
+                                # Update original pixbuf to the screen-fitted version for better zoom quality
+                                original_pixbuf[0] = pixbuf
+    
+                            # Apply current zoom level
+                            if zoom_level[0] != 1.0:
+                                zoomed_width = int(pixbuf.get_width() * zoom_level[0])
+                                zoomed_height = int(pixbuf.get_height() * zoom_level[0])
+                                pixbuf = pixbuf.scale_simple(zoomed_width, zoomed_height, GdkPixbuf.InterpType.BILINEAR)
     
                             img.set_from_pixbuf(pixbuf)
                             current_page[0] = page_num
@@ -439,6 +536,14 @@ class DocViewer:
                         close_viewer()
                     elif action == "axis_left":
                         render_page(current_page[0] - 1)
+                    elif action == "axis_up":
+                        zoom_in()
+                        render_page(current_page[0])  # Re-render current page with new zoom
+                    elif action == "axis_down":
+                        zoom_out()
+                        render_page(current_page[0])  # Re-render current page with new zoom
+                    elif action in ("pan_up", "pan_down", "pan_left", "pan_right"):
+                        pan_content(action)
                     return False
                 self._handle_gamepad_action = cbz_gamepad_handler
     
@@ -468,6 +573,14 @@ class DocViewer:
                 text_buffer = text_view.get_buffer()
                 text_buffer.set_text(content)
                 
+                # Set initial font and store original size for zooming
+                from gi.repository import Pango
+                font_desc = Pango.FontDescription()
+                font_desc.set_family("monospace")
+                font_desc.set_size(14 * Pango.SCALE)  # 14pt default
+                text_view.override_font(font_desc)
+                original_font_size[0] = 14  # Store original font size
+                
                 # Add text view to scrolled window
                 scrolled.add(text_view)
                 
@@ -486,6 +599,12 @@ class DocViewer:
                 def text_gamepad_handler(action: str):
                     if action in ("back", "activate"):
                         close_viewer()
+                    elif action == "axis_up":
+                        zoom_in()
+                    elif action == "axis_down":
+                        zoom_out()
+                    elif action in ("pan_up", "pan_down", "pan_left", "pan_right"):
+                        pan_content(action)
                     return False
                 self._handle_gamepad_action = text_gamepad_handler
                 

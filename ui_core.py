@@ -196,12 +196,17 @@ class UICore:
         # Set default size - use max_height as starting point
         win.set_default_size(width, max_height)
 
-        # Set geometry hints for both X11 and Wayland
-        geom = Gdk.Geometry()
-        geom.min_width = width
-        geom.max_width = width
-        geom.max_height = max_height
-        win.set_geometry_hints(None, geom, Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE)
+        # Set geometry hints for both X11 and Wayland - defer to avoid blocking
+        def set_geometry_hints():
+            geom = Gdk.Geometry()
+            geom.min_width = width
+            geom.max_width = width
+            geom.max_height = max_height
+            win.set_geometry_hints(None, geom, Gdk.WindowHints.MIN_SIZE | Gdk.WindowHints.MAX_SIZE)
+            return False
+        
+        # Defer geometry hints to avoid blocking window creation
+        GLib.idle_add(set_geometry_hints)
 
         # Store for later use
         self._is_wayland = is_wayland
@@ -623,8 +628,14 @@ class UICore:
             r.stop()
 
     def start_refresh(self):
-        for r in self.refreshers:
-            r.start()
+        # Defer refresh startup to prevent audio glitches during window creation
+        def start_refreshers_idle():
+            for r in self.refreshers:
+                r.start()
+            return False  # Don't repeat
+        
+        # Start refreshers after a short delay to let window settle
+        GLib.timeout_add(100, start_refreshers_idle)
 
         for widget, condition in self._conditional_widgets:
             try:
@@ -662,7 +673,14 @@ class UICore:
         """Use evdev to read gamepad input with exclusive access (blocks EmulationStation)"""
         if not EVDEV_AVAILABLE:
             return
-        self._gamepads.startThread(self._handle_gamepad_action_call)
+        
+        # Defer gamepad startup to avoid blocking window creation
+        def start_gamepad_delayed():
+            self._gamepads.startThread(self._handle_gamepad_action_call)
+            return False
+        
+        # Start gamepad after window is shown
+        GLib.timeout_add(50, start_gamepad_delayed)
 
         # give time to the user to release the hotkeys...
         n = 30

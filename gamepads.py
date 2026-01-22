@@ -250,6 +250,10 @@ class GamePads:
             "joystick1down": "axis_down",
             "joystick1left": "axis_left",
             "joystick1right": "axis_right",
+            "joystick2up": "pan_up",
+            "joystick2down": "pan_down",
+            "joystick2left": "pan_left",
+            "joystick2right": "pan_right",
             "pageup": "previous_tab",
             "pagedown": "next_tab",
         }

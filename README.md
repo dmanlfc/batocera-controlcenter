@@ -428,17 +428,17 @@ Creates a button that opens a fullscreen viewer for documents including PDFs, im
 **Supported formats:**
 - **PDF**: Requires `pdftoppm` and `pdfinfo` (usually pre-installed on Batocera)
   - Multi-page navigation with Previous/Next buttons
-  - Gamepad: Left/Right or A button to navigate, B to close
+  - Gamepad: Left/Right or A button to navigate, Up/Down to zoom in/out, Right analog stick to pan, B to close
 - **CBZ**: Comic Book Archive (ZIP file containing images)
   - Multi-page navigation with Previous/Next buttons
   - Images sorted naturally by filename
-  - Gamepad: Left/Right or A button to navigate, B to close
+  - Gamepad: Left/Right or A button to navigate, Up/Down to zoom in/out, Right analog stick to pan, B to close
 - **Images**: JPG, PNG, GIF, and other formats supported by GdkPixbuf
-  - Gamepad: A or B button to close
+  - Gamepad: Up/Down to zoom in/out, Right analog stick to pan, A or B button to close
 - **Text files**: TXT, LOG, MD, CONF, CFG, INI, JSON, XML, YAML, YML
   - Scrollable text view with monospace font
   - Font size controlled by CSS (`.doc-viewer-text` class)
-  - Gamepad: A or B button to close
+  - Gamepad: Up/Down to zoom in/out (font size), Right analog stick to pan/scroll, A or B button to close
 
 **Notes:**
 - Opens in fullscreen overlay window
@@ -447,6 +447,12 @@ Creates a button that opens a fullscreen viewer for documents including PDFs, im
 - Images and text are automatically scaled/formatted to fit screen
 - Supports both local files and HTTP/HTTPS URLs
 - Text files use UTF-8 encoding with error replacement for invalid characters
+- **Zoom functionality**: Use gamepad Up/Down or keyboard to zoom in/out on all content types
+  - Images/PDFs/CBZ: Zoom range 20% to 500%
+  - Text files: Font size zoom for better readability
+- **Pan functionality**: Use right analog stick to pan around zoomed content
+  - Works with all content types when zoomed in
+  - Smooth scrolling for precise navigation
 
 ### Refresh Behavior
 
