@@ -2830,6 +2830,9 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             choice_btn.get_style_context().add_class("cc-button")
             choice_btn.get_style_context().add_class("cc-choice")
             choice_btn.set_can_focus(True)
+            choice_btn.set_size_request(70, -1)  # Fixed width like other buttons
+            choice_btn.set_hexpand(False)  # Prevent horizontal expansion
+            choice_btn.set_halign(Gtk.Align.END)  # Align to the right side
             cell_box.pack_start(choice_btn, False, False, 6)
             choice_btn.connect("clicked", lambda *_: open_choice())
             cell_controls.append(choice_btn)
@@ -3001,6 +3004,28 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     row._items = []
     row._item_index = 0
 
+    # For choice features, add the Select button right after the label
+    choices = [c for c in feat.children if c.kind == "choice"]
+    if choices:
+        def open_choice():
+            core._about_to_show_dialog = True
+            _open_choice_popup(core, display_label, choices)
+            core._about_to_show_dialog = False
+
+        choice_btn = Gtk.Button.new_with_label(_("Select"))
+        choice_btn.get_style_context().add_class("cc-button")
+        choice_btn.get_style_context().add_class("cc-choice")
+        choice_btn.set_can_focus(True)
+        choice_btn.set_size_request(70, -1)  # Fixed width like other buttons
+        choice_btn.set_hexpand(False)  # Prevent horizontal expansion
+        choice_btn.set_halign(Gtk.Align.START)  # Align normally, not to the end
+        row_box.pack_start(choice_btn, False, False, 8)
+        choice_btn.connect("clicked", lambda *_: open_choice())
+
+        row._items.append(choice_btn)
+        if not hasattr(row, "_on_activate"):
+            row._on_activate = open_choice
+
     for sub in feat.children:
         kind = sub.kind
 
@@ -3045,7 +3070,9 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             else:  # center (default)
                 lbl.set_xalign(0.5)
                 lbl.set_halign(Gtk.Align.CENTER)
-            lbl.set_width_chars(40)   # Fixed width for value to prevent shifting
+            # For features with choices, don't set fixed width - let text size naturally
+            if not any(c.kind == "choice" for c in feat.children):
+                lbl.set_width_chars(40)   # Fixed width for value to prevent shifting (non-choice features only)
             row_box.pack_start(lbl, False, False, 8)
             disp = (sub.attrs.get("display", "") or "").strip()
             refresh = float(sub.attrs.get("refresh", feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
@@ -3169,26 +3196,6 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             tab = core.build_tab(feat, sub, row_box, pack_end=False)
             if tab:
                 row._items.append(tab)
-
-    # Choices (Select button only; current value is the <text> above)
-    choices = [c for c in feat.children if c.kind == "choice"]
-    if choices:
-        def open_choice():
-            core._about_to_show_dialog = True
-            _open_choice_popup(core, display_label, choices)
-            core._about_to_show_dialog = False
-
-        choice_btn = Gtk.Button.new_with_label(_("Select"))
-        choice_btn.get_style_context().add_class("cc-button")
-        choice_btn.get_style_context().add_class("cc-choice")
-        choice_btn.set_can_focus(True)
-        choice_btn.set_size_request(70, -1)  # Fixed width like other buttons
-        row_box.pack_start(choice_btn, False, False, 8)
-        choice_btn.connect("clicked", lambda *_: open_choice())
-
-        row._items.append(choice_btn)
-        if not hasattr(row, "_on_activate"):
-            row._on_activate = open_choice
 
     # Only register row if it has interactive items
     if row._items:
