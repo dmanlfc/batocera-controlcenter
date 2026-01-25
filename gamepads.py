@@ -360,11 +360,8 @@ class GamePads:
                         if DEBUG:
                             print(f"DEBUG: Axis {code} centered deadzone: {bornemin} to {bornemax} (threshold: {threshold}, range: {abs_info.min}-{abs_info.max})")
                     else:
-                        # For non-centered axes (like PS3 controller), use a proper deadzone around center
-                        # PS3 controller range is typically 0-255, center around 127-128
-                        threshold = (abs_info.max - abs_info.min) // 6  # Smaller deadzone for non-centered
-                        bornemin = center - threshold
-                        bornemax = center + threshold
+                        bornemin = abs_info.min -1 # can't reach it
+                        bornemax = center
                         if DEBUG:
                             print(f"DEBUG: Axis {code} non-centered deadzone: {bornemin} to {bornemax} (center: {center}, threshold: {threshold}, range: {abs_info.min}-{abs_info.max})")
                     axis_infos[dev.fd][code] =  { "bornemin": bornemin, "bornemax": bornemax }
