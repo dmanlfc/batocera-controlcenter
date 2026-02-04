@@ -3088,10 +3088,12 @@ def _init_focus(core: UICore):
     # Check if we have a tab row and focus on it first
     tab_row = None
     if hasattr(core.window, '_tab_row') and core.window._tab_row:
-        tab_row = core.window._tab_row
+        tr = core.window._tab_row
+        if not getattr(tr, "_is_header_row", False):
+            tab_row = tr
         # Find the tab row in focus_rows
         for i, row in enumerate(core.focus_rows):
-            if row == tab_row:
+            if row is tab_row:
                 core.focus_index = i
                 core._row_set_focused(tab_row, True)
                 _focus_widget(tab_row)
@@ -3115,6 +3117,8 @@ def _init_focus(core: UICore):
     
     # Fallback: if no tab row found, focus on first content row
     for i, row in enumerate(core.focus_rows):
+        if getattr(row, "_is_header_row", False):
+            continue   # skip header rows as init target
         # Skip header rows without controls
         if hasattr(row, "_cells") and row._cells:
             # Check if this row has any controls
@@ -3187,6 +3191,7 @@ def _get_group_container_new(core: UICore, parent_box: Gtk.Box, display_title: s
 
 def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
     row = Gtk.EventBox()
+    row._is_header_row = bool(is_header)
     row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
     row_box.set_halign(Gtk.Align.CENTER)  # Center the row contents
     # Set consistent width for all rows (90% of window width)
