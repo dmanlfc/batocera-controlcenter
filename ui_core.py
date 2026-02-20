@@ -93,7 +93,7 @@ def evaluate_if_condition(condition: str, rendered_ids: set[str]) -> bool:
         result_clean = result.strip()
         if result_clean.lower() == "null":
             result_clean = ""
-        return bool(result) and bool(result_clean)
+        return bool(result_clean)
 
     # Unknown format - default to True to avoid hiding content
     return True
@@ -2371,6 +2371,16 @@ class UICore:
 
         (row_box.pack_end if pack_end else row_box.pack_start)(img, False, False, 6)
 
+        if_condition = (sub.attrs.get("if", "") or "").strip()
+        if if_condition:
+            # Track this widget for dynamic visibility updates
+            self._conditional_widgets.append((img, if_condition))
+            # Do NOT rely on should_render_element for <img>; we control visibility here
+            # Start with it hidden; _recompute_conditionals will decide
+            img.set_visible(False)
+        else:
+            img.set_visible(True)
+
         # Register ID for img elements (they always produce visual content)
         register_element_id(sub, self.rendered_ids)
 
@@ -3510,9 +3520,9 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 # Register ID for features with labels
                 register_element_id(child, core.rendered_ids)
 
-            # Process feature children (buttons, text, etc.)
             for sub in child.children:
-                if not should_render_element(sub, core.rendered_ids):
+                # Let img/qrcode/progressbar/doc always be created; their own 'if' will control visibility
+                if sub.kind not in ("img", "qrcode", "progressbar", "doc", "button") and not should_render_element(sub, core.rendered_ids):
                     continue
                     
                 if sub.kind == "text":
@@ -3627,7 +3637,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
                     # Add feature children inline
                     for sub in nested_child.children:
-                        if not should_render_element(sub, core.rendered_ids):
+                        if sub.kind not in ("img", "qrcode", "progressbar", "doc", "button") and not should_render_element(sub, core.rendered_ids):
                             continue
                         if sub.kind == "text":
                             core.build_text(nested_child, sub, cell_box, align_end=False)
@@ -3660,7 +3670,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
             # Process hgroup children (features, text, img, etc.)
             for hg_child in child.children:
                 # Check if this child should be rendered
-                if not should_render_element(hg_child, core.rendered_ids):
+                if hg_child.kind not in ("img", "qrcode", "progressbar", "doc", "button") and not should_render_element(hg_child, core.rendered_ids):
                     continue
 
                 if hg_child.kind == "feature":
@@ -3681,7 +3691,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
                     # Add feature children
                     for sub in hg_child.children:
-                        if not should_render_element(sub, core.rendered_ids):
+                        if sub.kind not in ("img", "qrcode", "progressbar", "doc", "button") and not should_render_element(sub, core.rendered_ids):
                             continue
                         if sub.kind == "text":
                             core.build_text(hg_child, sub, feat_box, align_end=False)
@@ -3780,7 +3790,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
         cell_controls: list[Gtk.Widget] = []
         for sub in child.children:
             # Check if this sub-element should be rendered
-            if not should_render_element(sub, core.rendered_ids):
+            if sub.kind not in ("img", "qrcode", "progressbar", "doc", "button") and not should_render_element(sub, core.rendered_ids):
                 continue
 
             if sub.kind == "text":
@@ -4090,10 +4100,6 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
         core.add_touch_sync_to_widget(choice_btn)
 
     for sub in feat.children:
-        # Check if this sub-element should be rendered
-        # if not should_render_element(sub, core.rendered_ids):
-        #    continue
-
         kind = sub.kind
 
         if kind == "button":
