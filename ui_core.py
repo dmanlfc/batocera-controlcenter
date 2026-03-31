@@ -40,7 +40,12 @@ except Exception:
 from refresh import RefreshTask, DEFAULT_REFRESH_SEC, Debouncer
 from shell import run_shell_capture, normalize_bool_str, get_primary_geometry, expand_command_string
 
-def handle_afterclick(core: 'UICore', afterclick_attr: str):
+# handle_afterclick_before : actions to do before the call
+# handle_afterclick_after  : actions to do after the call
+# the limit is not so well done while in some case, we want the action to be done after (refresh ui after a command)
+# but sometimes, we want the action to be done after (mainly hotkeys commands so that that they applies on the emulator window and not on the bcc)
+# so, a first proposal is to put bcc_close in the _before cause that's the one used for hotkeys, and the others in after. It may be improved.
+def handle_afterclick_before(core: 'UICore', afterclick_attr: str):
     """Handle afterclick attribute - execute command or special action after main action"""
     if not afterclick_attr or not afterclick_attr.strip():
         return
@@ -52,7 +57,16 @@ def handle_afterclick(core: 'UICore', afterclick_attr: str):
         # Don't clear any focus - let GTK handle it naturally
         debug_print("[AFTERCLICK] Hiding window for bcc_close")
         core.hide()
-    elif afterclick == "bcc_refresh":
+        time.sleep(1)
+
+def handle_afterclick_after(core: 'UICore', afterclick_attr: str):
+    """Handle afterclick attribute - execute command or special action after main action"""
+    if not afterclick_attr or not afterclick_attr.strip():
+        return
+    
+    afterclick = afterclick_attr.strip()
+    
+    if afterclick == "bcc_refresh":
         # Force the UI to re-read all shell commands and toggle visibility
         GLib.idle_add(core._recompute_conditionals)
     elif afterclick.startswith("${") and afterclick.endswith("}"):
@@ -1614,7 +1628,9 @@ class UICore:
                     # Force a UI refresh after EVERY action
                     GLib.idle_add(self._recompute_conditionals)
                     if afterclick:
-                        GLib.idle_add(lambda: handle_afterclick(self, afterclick))
+                        GLib.idle_add(lambda: handle_afterclick_after(self, afterclick))
+                if afterclick:
+                    GLib.idle_add(lambda: handle_afterclick_before(self, afterclick))
                 threading.Thread(target=run_action_with_afterclick, daemon=True).start()
         return cb
 
@@ -2016,7 +2032,9 @@ class UICore:
                     run_shell_capture(act)
                     # Run afterclick if specified
                     if afterclick:
-                        handle_afterclick(self, afterclick)
+                        handle_afterclick_after(self, afterclick)
+                if afterclick:
+                    handle_afterclick_before(self, afterclick)
                 threading.Thread(target=run_toggle_action, daemon=True).start()
 
         tbtn.connect("toggled", on_toggled)
@@ -2125,10 +2143,12 @@ class UICore:
                 switch_state["last_user_change"] = time.time()
                 
                 def run_switch_action(action):
+                    if afterclick:
+                        handle_afterclick_before(self, afterclick)
                     run_shell_capture(action)
                     # Run afterclick if specified
                     if afterclick:
-                        handle_afterclick(self, afterclick)
+                        handle_afterclick_after(self, afterclick)
                 
                 if state and action_on:
                     if self.debouncer.allow(f"switch_on:{action_on}"):
@@ -4707,14 +4727,16 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
                 pass
 
     def on_confirm(_w):
+        dialog.destroy()
         if action:
             def run_confirm_action():
                 run_shell_capture(action)
                 # Run afterclick if specified
                 if afterclick:
-                    handle_afterclick(core, afterclick)
+                    handle_afterclick_after(core, afterclick)
+            if afterclick:
+                handle_afterclick_before(core, afterclick)
             threading.Thread(target=run_confirm_action, daemon=True).start()
-        dialog.destroy()
 
     # Override gamepad handler for dialog
     original_handler = core._handle_gamepad_action_main
@@ -4886,7 +4908,9 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
                 run_shell_capture(action)
                 # Run afterclick if specified
                 if afterclick_attr:
-                    handle_afterclick(core, afterclick_attr)
+                    handle_afterclick_after(core, afterclick_attr)
+            if afterclick_attr:
+                handle_afterclick_before(core, afterclick_attr)
             threading.Thread(target=run_choice_action, daemon=True).start()
 
     def update_choice_focus():
