@@ -406,21 +406,36 @@ class UICore:
                         scale_class = "full"
                     if sh >= 720:
                         height = int(sh * 0.95)
-                        scale_class = "full"
+                        if scale_class == "small":
+                            scale_class = "medium"
                     if sh >= 1080:
                         height = int(sh * 0.80)
                         scale_class = "full"
 
                 debug_print(f"[DPI] Wayland BCC win:{width}x{height} screen:{sw}x{sh}")
 
-                # apply variables
-                max_height = sh
-                x0 = (sw-width) // 2
-                y0 = (sh-height) // 5
-                sw = width
-                sh = height
-                width_margin = x0
-                height_margin = y0
+                if sw < 1280:
+                    # Small screen (e.g. 720x720 handheld): use the full output
+                    # with no margins. The layer-shell surface is anchored to
+                    # all four edges, so zero margins make it cover the whole
+                    # screen, giving the content room and letting the scrolled
+                    # window handle overflow (footer not clipped).
+                    max_height = sh
+                    x0 = 0
+                    y0 = 0
+                    width = sw
+                    height = sh
+                    width_margin = 0
+                    height_margin = 0
+                else:
+                    # Larger screen: keep the centered, margin-based layout.
+                    max_height = sh
+                    x0 = (sw-width) // 2
+                    y0 = (sh-height) // 5
+                    sw = width
+                    sh = height
+                    width_margin = x0
+                    height_margin = y0
 
             debug_print(f"[DPI] Wayland startup geometry:{sw}x{sh} margins:{width_margin}x{height_margin}")
             # apply margin
@@ -458,7 +473,8 @@ class UICore:
                     scale_class = "full"
                 if sh >= 720:
                     max_height = int(sh * 0.95)
-                    scale_class = "full"
+                    if scale_class == "small":
+                        scale_class = "medium"
                 if sh >= 1080:
                     max_height = int(sh * 0.80)
                     scale_class = "full"
@@ -538,10 +554,14 @@ class UICore:
 
             if dpi:
                 old_class = self._scale_class
-                # Simple thresholds – tweaked for your Thor, needs to be tested on other handhelds
-                # Force small scale if the display resolution is physically low
-                if self._window_width < 1024 or self._max_height < 600:
+                # Pick a scale tier from the physical display resolution.
+                #   - very small (CRT)         -> small  (10px)
+                #   - small (<=720p handhelds) -> medium (14px)
+                #   - normal and up            -> DPI-driven full/large
+                if self._window_width < 480 or self._max_height < 480:
                     new_class = "small"
+                elif self._window_width < 1024 or self._max_height < 600:
+                    new_class = "medium"
                 elif dpi >= 140:
                     new_class = "large"
                 elif dpi >= 40:
@@ -1904,7 +1924,6 @@ class UICore:
             def set_initial():
                 initial_val = run_shell_capture_cached(c).strip()
                 element_id = (sub.attrs.get("id", "") or "").strip()
-                
                 if is_empty_or_null(initial_val):
                     hide_and_unregister()
                     # Only recompute if element had an ID
@@ -1922,7 +1941,6 @@ class UICore:
             def upd(val: str, _l=lbl, _sub=sub, _core=self):
                 txt = (val or "").strip()
                 element_id = (_sub.attrs.get("id", "") or "").strip()
-                
                 if txt and txt.lower() != "null":
                     _l.set_text(txt)
                     _l.set_visible(True)
@@ -3448,8 +3466,9 @@ def ui_build_containers(core: UICore, xml_root):
     footer_box.set_halign(Gtk.Align.CENTER)
     for child in xml_root.children:
         if child.kind == "vgroup" and (child.attrs.get("role", "") or "").strip().lower() == "footer":
-            row = _build_vgroup_row(core, child, is_header=True)
+            row = _build_vgroup_row(core, child, is_header=True, is_footer=True)
             if row:
+                row.get_style_context().add_class("footer-row")
                 footer_box.pack_start(row, False, False, 0)
 
     if footer_box.get_children():
@@ -3576,18 +3595,25 @@ def _get_group_container_new(core: UICore, parent_box: Gtk.Box, display_title: s
     return inner
 
 
-def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
+def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False) -> Gtk.EventBox:
     row = Gtk.EventBox()
     row._is_header_row = bool(is_header)
     row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
     row_box.set_halign(Gtk.Align.CENTER)  # Center the row contents
-    # Set consistent width for all rows (90% of window width)
-    row_box.set_size_request(int(core._window_width * 0.95), -1)
+    # Set consistent width for all rows (95% of window width). The footer uses
+    # natural-width cells (cell_expand=False) so it stays only as wide as its
+    # content and centers within the window instead of overflowing it.
+    width_frac = 0.95
+    row_box.set_size_request(int(core._window_width * width_frac), -1)
     row.add(row_box)
     row.set_above_child(False)
     row.get_style_context().add_class("vgroup-row")
 
     is_header_row = bool(is_header)
+    # Footer cells equal-expand (True) to balance the 3 features across the
+    # row width, matching the original layout. The value labels' min-width is
+    # zeroed in CSS (.footer-row .value) so the row doesn't overflow the window.
+    cell_expand = True
 
     cells = []
 
@@ -3641,7 +3667,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
             # Text-only cells have no controls, so they're not interactive
             cells.append((cell_event, []))
-            row_box.pack_start(cell_event, True, True, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
 
             i = j  # Skip the text children we just processed
             continue
@@ -3725,7 +3751,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 cell_event._control_index = 0
 
             cells.append((cell_event, cell_controls))
-            row_box.pack_start(cell_event, True, True, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
             continue
 
         # Handle direct <img> and <qrcode> children in vgroup
@@ -3746,7 +3772,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
             # Img/qrcode-only cells have no controls, so they're not interactive
             cells.append((cell_event, []))
-            row_box.pack_start(cell_event, True, True, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
             continue
 
         # Handle nested <vgroup> children in vgroup - treat as a cell
@@ -3806,7 +3832,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                             core.build_doc(nested_child, sub, cell_box, pack_end=False)
 
             cells.append((cell_event, []))
-            row_box.pack_start(cell_event, True, True, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
             continue
 
         # Handle nested <hgroup> children in vgroup
@@ -3912,7 +3938,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
                 cell_event.connect("button-press-event", on_cell_click)
 
             cells.append((cell_event, cell_controls))
-            row_box.pack_start(cell_event, True, True, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
             continue
 
         if child.kind != "feature":
@@ -4079,7 +4105,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool) -> Gtk.EventBox:
 
         # Always add cell to row (even if no controls) for display
         cells.append((cell_event, cell_controls))
-        row_box.pack_start(cell_event, True, True, 12)
+        row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
 
     # Check if row has any interactive controls
     has_controls = any(controls for _, controls in cells)

@@ -5,6 +5,10 @@
     font-size: 10px;
 }
 
+.scale-medium * {
+    font-size: 14px;
+}
+
 .scale-full * {
     font-size: 16px;
 }
@@ -34,7 +38,8 @@
   color: #e6e9ef;
 }
 
-.scale-small .group-title {
+.scale-small .group-title,
+.scale-medium .group-title {
   padding: 2px 3px;          /* left indent + vertical spacing */
   background-color: #141821;  /* background of the title label */
   border-radius: 3px;         /* rounded corners */
@@ -59,7 +64,8 @@ frame > border {
 /* Layout helpers */
 .vgroup-row { padding: 4px 0; }
 
-.scale-small .vgroup-row { padding: 2px 0; }
+.scale-small .vgroup-row,
+.scale-medium .vgroup-row { padding: 2px 0; }
 
 .vgroup-cell {
   background-color: #141821;
@@ -67,7 +73,8 @@ frame > border {
   min-height: 50px;  /* Consistent row height for grid alignment */
 }
 
-.scale-small .vgroup-cell {
+.scale-small .vgroup-cell,
+.scale-medium .vgroup-cell {
   background-color: #141821;
   padding: 4px 4px;
   min-height: 20px;  /* Consistent row height for grid alignment */
@@ -75,11 +82,15 @@ frame > border {
 
 .vgroup-cell-first { min-width: 180px; }
 
-.scale-small .vgroup-cell-first { min-width: 80px; }
+.scale-small .vgroup-cell-first,
+.scale-medium .vgroup-cell-first { min-width: 60px; }
 
 .vgroup-row .header + .value, .vgroup-row .value { min-width: 200px; }
 
-.scale-small .vgroup-row .header + .value, .vgroup-row .value { min-width: 90px; }
+.footer-row .value { min-width: 0; }
+
+.scale-small .vgroup-row .header + .value, .vgroup-row .value,
+.scale-medium .vgroup-row .header + .value, .vgroup-row .value { min-width: 80px; }
 
 .section-separator { background-color: #232a36; min-height: 2px; }
 
@@ -91,11 +102,12 @@ frame > border {
   background-color: #141821;
 }
 
-.scale-small .group-frame {
+.scale-small .group-frame,
+.scale-medium .group-frame {
   border: 2px solid #232a36;
   border-radius: 6px;
   margin: 6px 0;
-  padding: 8px;
+  padding: 6px;
   background-color: #141821;
 }
 
@@ -110,7 +122,8 @@ button {
   color: #e6e9ef; /* fallback if no nested label */
 }
 
-.scale-small button {
+.scale-small button,
+.scale-medium button {
   border-radius: 6px;
   padding: 4px 6px;
   min-width: 40px;
@@ -211,7 +224,8 @@ button.cc-toggle {
   background-image: none;
 }
 
-.scale-small button.cc-toggle {
+.scale-small button.cc-toggle,
+.scale-medium button.cc-toggle {
   background-color: #3d1f1f;
   color: #ffffff;
   border: 1px solid #4a2525;
@@ -284,12 +298,13 @@ border: 2px solid #2a3240;
   box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.4);
 }
 
-.scale-small button.cc-tab {
+.scale-small button.cc-tab,
+.scale-medium button.cc-tab {
 border: 2px solid #2a3240;
   border-bottom: 2px solid #14181f;
   border-radius: 6px 6px 0 0;  /* Rounded top corners only */
   padding: 6px 10px;
-  min-width: 80px;
+  min-width: 60px;
   background-image: none;
   color: #6a7280;
   margin: 0 2px;
@@ -315,7 +330,8 @@ button.cc-tab:checked {
   box-shadow: 0 0 6px rgba(95, 157, 255, 0.3);
 }
 
-.scale-small button.cc-tab:checked {
+.scale-small button.cc-tab:checked,
+.scale-medium button.cc-tab:checked {
   border: 3px solid #5f9dff;  /* Blue border */
   border-bottom: 2px solid #14181f;  /* Blend with content area */
   margin-bottom: -2px;
@@ -379,6 +395,11 @@ dialog .dialog-action-area,
   padding: 10px;
 }
 
+.scale-medium .doc-viewer-text {
+  font-size: 14pt;
+  padding: 15px;
+}
+
 .scale-large .doc-viewer-text {
     font-size: 22px;
   padding: 30px;
@@ -390,7 +411,7 @@ dialog .dialog-action-area,
 }
 
 .cc-progressbar {
-  min-width: 200px;
+  min-width: 150px;
   min-height: 20px;
   background-color: #12161f;
   border: 1px solid #232a36;
@@ -398,8 +419,9 @@ dialog .dialog-action-area,
   padding: 2px;
 }
 
-.scale-small .cc-progressbar {
-  min-width: 120px;
+.scale-small .cc-progressbar,
+.scale-medium .cc-progressbar {
+  min-width: 80px;
   min-height: 12px;
   border-radius: 6px;
   padding: 1px;
@@ -411,7 +433,8 @@ dialog .dialog-action-area,
   border: none;
 }
 
-.scale-small .cc-progressbar > trough {
+.scale-small .cc-progressbar > trough,
+.scale-medium .cc-progressbar > trough {
   border-radius: 4px;
 }
 
@@ -423,7 +446,8 @@ dialog .dialog-action-area,
   min-height: 16px;
 }
 
-.scale-small .cc-progressbar > trough > progress {
+.scale-small .cc-progressbar > trough > progress,
+.scale-medium .cc-progressbar > trough > progress {
   border-radius: 3px;
   min-height: 10px;
 }
@@ -442,7 +466,8 @@ dialog .dialog-action-area,
   min-height: 24px;
 }
 
-.scale-small .cc-switch {
+.scale-small .cc-switch,
+.scale-medium .cc-switch {
   border-radius: 8px;
   min-width: 32px;
   min-height: 16px;
@@ -462,7 +487,8 @@ dialog .dialog-action-area,
   margin: 1px;
 }
 
-.scale-small .cc-switch > slider {
+.scale-small .cc-switch > slider,
+.scale-medium .cc-switch > slider {
   min-width: 12px;
   min-height: 12px;
 }
