@@ -9,6 +9,7 @@
 # YOU MUST KEEP THIS HEADER AS IT IS
 import os
 import time
+import shlex
 import gi
 gi.require_version('Gtk', '3.0'); gi.require_version('Gdk', '3.0')
 from gi.repository import Gtk, Gdk, GLib, Pango
@@ -37,7 +38,7 @@ except Exception:
     EVDEV_AVAILABLE = False
 
 from refresh import RefreshTask, ExpandRefreshTask, DEFAULT_REFRESH_SEC, Debouncer, run_off_main_thread
-from shell import run_shell_capture, run_shell_capture_cached, run_shell_cache_lookup, normalize_bool_str, get_primary_geometry, expand_command_string
+from shell import run_shell_capture, run_shell_capture_cached, run_shell_capture_lines, run_shell_cache_lookup, normalize_bool_str, get_primary_geometry, expand_command_string, expand_command_string_cached, extract_commands, shell_cache_has_all, warm_shell_cache
 
 # handle_afterclick_before : actions to do before the call
 # handle_afterclick_after  : actions to do after the call
@@ -178,6 +179,99 @@ def is_cmd(s: str) -> bool:
 def cmd_of(s: str) -> str:
     s = (s or "").strip()
     return s[2:-1].strip() if is_cmd(s) else ""
+
+
+class _SyntheticChoice:
+    """A minimal stand-in for a <choice> CCElement, produced by expanding a
+    <choice_cmd> at popup-open time. Only .kind/.attrs/.line are read by the
+    choice-popup and prewarm code."""
+    __slots__ = ("kind", "attrs", "line")
+    def __init__(self, attrs: dict, line: int = -1):
+        self.kind = "choice"
+        self.attrs = attrs
+        self.line = line
+
+
+def _choice_cache_ttl(elem) -> float:
+    """Shared TTL reader for <choice> and <choice_cmd> (default 5s)."""
+    try:
+        return max(0.0, float((elem.attrs.get("cache") or "5").strip() or "5"))
+    except Exception:
+        return 5.0
+
+
+def expand_choice_cmd(elem) -> list:
+    """
+    Expand a single <choice_cmd> element into a list of synthetic <choice>
+    elements by running its display/action_arg commands.
+
+    - ``display``  : a ${...} command whose stdout lines become option labels.
+    - ``action``   : the base shell command prefixed to every option.
+    - ``action_arg`` (optional): a ${...} command whose stdout lines become the
+      per-option argument appended to ``action`` (quoted with shlex.quote).
+
+    The label and arg lists are zipped positionally; extra lines on either side
+    are ignored. When action_arg is omitted, only the base ``action`` runs.
+    Results are read through the shared TTL cache (cache="N") so repeated
+    opens don't re-spawn the commands.
+
+    Returns a (possibly empty) list of _SyntheticChoice objects.
+    """
+    disp_attr = (elem.attrs.get("display") or "").strip()
+    action = (elem.attrs.get("action") or "").strip()
+    arg_attr = (elem.attrs.get("action_arg") or "").strip()
+    afterclick = (elem.attrs.get("afterclick") or "").strip()
+    ttl = _choice_cache_ttl(elem)
+
+    # Resolve the label command (must be a ${...} command)
+    labels = []
+    if is_cmd(disp_attr):
+        labels = run_shell_capture_lines(cmd_of(disp_attr), ttl_sec=ttl)
+    elif disp_attr:
+        labels = [disp_attr]
+
+    # Resolve the per-option argument command (optional)
+    args = []
+    if arg_attr:
+        if is_cmd(arg_attr):
+            args = run_shell_capture_lines(cmd_of(arg_attr), ttl_sec=ttl)
+        else:
+            args = [arg_attr]
+
+    if not labels:
+        return []
+
+    result = []
+    for i, label in enumerate(labels):
+        # Build the action: base action + quoted arg (if any)
+        if args and i < len(args) and args[i].strip():
+            full_action = f"{action} {shlex.quote(args[i].strip())}"
+        else:
+            full_action = action
+        attrs = {
+            "display": label,
+            "action": full_action,
+        }
+        if afterclick:
+            attrs["afterclick"] = afterclick
+        result.append(_SyntheticChoice(attrs, line=getattr(elem, "line", -1)))
+    return result
+
+
+def expand_choices(children) -> list:
+    """
+    Return a flat list of <choice> elements, expanding any <choice_cmd>
+    children into synthetic <choice> elements. Plain <choice> children are
+    passed through unchanged. Order is preserved.
+    """
+    out = []
+    for c in children:
+        if c.kind == "choice":
+            out.append(c)
+        elif c.kind == "choice_cmd":
+            out.extend(expand_choice_cmd(c))
+    return out
+
 
 def is_empty_or_null(s: str) -> bool:
     s = (s or "").strip()
@@ -4065,13 +4159,24 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                 # Add touchscreen synchronization
                 core.add_touch_sync_to_widget(switch)
 
-        # Add choice button if feature has choice children
-        choices = [c for c in child.children if c.kind == "choice"]
+        # Add choice button if feature has choice/choice_cmd children
+        choices = [c for c in child.children if c.kind in ("choice", "choice_cmd")]
         if choices:
             feature_label = label_text or "Option"
-            def open_choice(_core=core, _label=feature_label, _choices=choices):
+            # Prewarm dynamic display="${...}" commands for the choices so the
+            # popup opens instantly (cache hit) instead of blocking on a
+            # subprocess the first time. For <choice_cmd>, also prewarm the
+            # action_arg command.
+            _pw_cmds = []
+            for _c in choices:
+                _pw_cmds.extend(extract_commands((_c.attrs.get("display", "") or "").strip()))
+                if _c.kind == "choice_cmd":
+                    _pw_cmds.extend(extract_commands((_c.attrs.get("action_arg", "") or "").strip()))
+            if _pw_cmds:
+                warm_shell_cache(_pw_cmds)
+            def open_choice(_core=core, _label=feature_label, _children=choices):
                 _core._about_to_show_dialog = True
-                _open_choice_popup(_core, _label, _choices)
+                _open_choice_popup(_core, _label, expand_choices(_children))
                 _core._about_to_show_dialog = False
 
             choice_btn = Gtk.Button.new_with_label(_("Select"))
@@ -4256,11 +4361,22 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     row._item_index = 0
 
     # For choice features, add the Select button right after the label
-    choices = [c for c in feat.children if c.kind == "choice"]
+    choices = [c for c in feat.children if c.kind in ("choice", "choice_cmd")]
     if choices:
+        # Prewarm dynamic display="${...}" commands for the choices so the
+        # popup opens instantly (cache hit) instead of blocking on a
+        # subprocess the first time. For <choice_cmd>, also prewarm the
+        # action_arg command.
+        _pw_cmds = []
+        for _c in choices:
+            _pw_cmds.extend(extract_commands((_c.attrs.get("display", "") or "").strip()))
+            if _c.kind == "choice_cmd":
+                _pw_cmds.extend(extract_commands((_c.attrs.get("action_arg", "") or "").strip()))
+        if _pw_cmds:
+            warm_shell_cache(_pw_cmds)
         def open_choice():
             core._about_to_show_dialog = True
-            _open_choice_popup(core, display_label, choices)
+            _open_choice_popup(core, display_label, expand_choices(choices))
             core._about_to_show_dialog = False
 
         choice_btn = Gtk.Button.new_with_label(_("Select"))
@@ -4333,7 +4449,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
                 lbl.set_xalign(0.5)
                 lbl.set_halign(Gtk.Align.CENTER)
             # For features with choices, don't set fixed width - let text size naturally
-            if not any(c.kind == "choice" for c in feat.children):
+            if not any(c.kind in ("choice", "choice_cmd") for c in feat.children):
                 lbl.set_width_chars(40)   # Fixed width for value to prevent shifting (non-choice features only)
             row_box.pack_start(lbl, False, False, 8)
             disp = (sub.attrs.get("display", "") or "").strip()
@@ -5006,9 +5122,26 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
 
     core._handle_gamepad_action = dialog_gamepad_handler
 
+    # Per-choice dynamic display: display="${cmd}" (optionally with cache="N").
+    # Resolve each label through the shared TTL cache so the popup never blocks
+    # the UI thread in steady state. A cold cache yields "" here and a
+    # background refresh (already prewarmed at build time) warms it for the
+    # next open; a one-shot post-show pass re-reads the labels once more.
+    def _resolve_choice_display(choice, allow_block: bool) -> str:
+        disp = (choice.attrs.get("display", "") or "Option").strip()
+        if not disp:
+            disp = "Option"
+        if "${" in disp:
+            ttl = _choice_cache_ttl(choice)
+            return expand_command_string_cached(disp, ttl_sec=ttl, allow_block=allow_block) or "Option"
+        return disp
+
     # Create a button for each choice
     for choice in choices:
-        display = (choice.attrs.get("display", "") or "Option").strip()
+        display = _resolve_choice_display(choice, allow_block=shell_cache_has_all(
+            extract_commands((choice.attrs.get("display", "") or "").strip()),
+            _choice_cache_ttl(choice)))
+
         action = choice.attrs.get("action", "")
         afterclick = choice.attrs.get("afterclick", "")
 
@@ -5053,6 +5186,32 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
     if choice_buttons:
         current_choice[0] = 0  # Explicitly reset to first choice
         GLib.idle_add(update_choice_focus)
+
+    # One-shot refresh of dynamic choice labels after the popup is shown.
+    # Each label is re-resolved off the UI thread (respecting its cache TTL);
+    # only labels that actually changed are pushed back to their buttons. The
+    # dialog may have been closed by the time the results arrive, so every GTK
+    # access is guarded.
+    _dyn_choices = [(c, b) for c, b in zip(choices, choice_buttons)
+                   if "${" in (c.attrs.get("display", "") or "")]
+    if _dyn_choices:
+        def _refresh_labels():
+            for choice, btn in _dyn_choices:
+                try:
+                    new_disp = _resolve_choice_display(choice, allow_block=False)
+                    if not new_disp:
+                        new_disp = "Option"
+                    def _apply(_b=btn, _nd=new_disp):
+                        try:
+                            if _b.get_label() != _nd:
+                                _b.set_label(_(_nd))
+                        except Exception:
+                            pass
+                        return False
+                    GLib.idle_add(_apply)
+                except Exception:
+                    pass
+        run_off_main_thread(_refresh_labels)
 
     # On Wayland, remove dialog decorations
     if core._is_wayland:

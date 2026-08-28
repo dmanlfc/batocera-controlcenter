@@ -36,7 +36,7 @@ def validate_xml(root: CCElement) -> tuple[list[str], list[str]]:
     warnings: list[str] = []
 
     # Allowed tags
-    allowed_tags = {"features", "vgroup", "hgroup", "feature", "text", "button", "button_confirm", "toggle", "choice", "img", "qrcode", "doc", "tab", "progressbar", "switch"}
+    allowed_tags = {"features", "vgroup", "hgroup", "feature", "text", "button", "button_confirm", "toggle", "choice", "choice_cmd", "img", "qrcode", "doc", "tab", "progressbar", "switch"}
 
     # Requirements per tag (name optional everywhere now)
     required_per_tag = {
@@ -50,6 +50,7 @@ def validate_xml(root: CCElement) -> tuple[list[str], list[str]]:
         "toggle": set(),      # display and value both optional; action_on/off optional
         "switch": set(),      # display and value both optional; action_on/off optional (same as toggle)
         "choice": {"display", "action"},  # runs 'action' when selected
+        "choice_cmd": {"display", "action"},  # display (labels cmd) and action required; action_arg optional
         "img": set(),         # display optional (path, URL, or ${...} command)
         "qrcode": set(),      # display optional (text, URL, or ${...} command to encode as QR)
         "doc": {"display", "content"},  # display for button label, content for document path
@@ -69,7 +70,8 @@ def validate_xml(root: CCElement) -> tuple[list[str], list[str]]:
         "button_confirm": {"display", "action", "refresh", "align", "afterclick"},
         "toggle": {"display", "value", "action_on", "action_off", "refresh", "align", "afterclick"},
         "switch": {"display", "value", "action_on", "action_off", "refresh", "align", "afterclick"},
-        "choice": {"display", "action", "afterclick"},
+        "choice": {"display", "action", "afterclick", "cache"},
+        "choice_cmd": {"display", "action", "action_arg", "afterclick", "cache"},
         "img": {"display", "width", "height", "refresh", "align"},
         "qrcode": {"display", "width", "height", "refresh", "align", "bg", "style", "logo", "font", "text"},
         "doc": {"display", "content", "refresh"},
@@ -164,6 +166,29 @@ def validate_xml(root: CCElement) -> tuple[list[str], list[str]]:
             act = (node.attrs.get("action") or "").strip()
             if act == "":
                 errors.append(f"[line {node.line}] <choice> requires non-empty 'action' at {path_str(stack[:-1])}")
+            # cache (optional): TTL in seconds for a dynamic display="${...}"
+            if "cache" in node.attrs:
+                cval = (node.attrs.get("cache") or "").strip()
+                if cval:
+                    try:
+                        cv = float(cval)
+                        if cv < 0:
+                            errors.append(f"[line {node.line}] cache must be >= 0 on <choice> at {path_str(stack[:-1])}")
+                    except Exception:
+                        errors.append(f"[line {node.line}] cache must be a number on <choice> at {path_str(stack[:-1])}")
+
+        # choice_cmd: required display/action are enforced by required_per_tag;
+        # validate the optional cache attribute here.
+        if node.kind == "choice_cmd":
+            if "cache" in node.attrs:
+                cval = (node.attrs.get("cache") or "").strip()
+                if cval:
+                    try:
+                        cv = float(cval)
+                        if cv < 0:
+                            errors.append(f"[line {node.line}] cache must be >= 0 on <choice_cmd> at {path_str(stack[:-1])}")
+                    except Exception:
+                        errors.append(f"[line {node.line}] cache must be a number on <choice_cmd> at {path_str(stack[:-1])}")
 
         # img and qrcode width/height must be positive integers or percentages if present
         if node.kind in ("img", "qrcode"):

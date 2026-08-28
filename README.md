@@ -356,10 +356,78 @@ Creates a "Select" button that opens a popup with multiple choices.
 </feature>
 ```
 
+The `display` attribute also supports dynamic command substitution (`${...}`), so each
+option label can be computed at popup-open time instead of being hard-coded. This is
+useful when the available options — or their labels — depend on the current system
+state:
+
+```xml
+<feature display="Services">
+  <choice display="${batocera-services list | grep batocera_torrent | cut-d';' -f1}" action="batocera-services enable batocera_torrent" cache="60" />
+  <choice display="${batocera-services list | grep syncthing | cut-d';' -f1}" action="batocera-services enable syncthing" cache="60" />
+</feature>
+```
+
+To keep the Control Center snappy, dynamic `display` results are cached: the commands
+are prewarmed in the background while the feature is on screen, and the popup resolves
+labels from the cache (a pure dict lookup, no subprocess) when it opens. The optional
+`cache` attribute sets the time-to-live in seconds for the cached label (default `5`).
+Within that window the cached value is reused without re-running the command; once it
+expires a background refresh warms the cache again so the next open is still instant.
+
 **Attributes:**
-- `display`: Option label in the popup
+- `display`: Option label in the popup (supports `${...}` command substitution for dynamic labels)
 - `action`: Shell command to execute when selected
 - `afterclick`: Command or action to execute after the main action completes (optional)
+- `cache`: Time-to-live in seconds for a cached dynamic `display` label (optional, default `5`; only meaningful with `display="${...}"`)
+
+#### `<choice_cmd>` - Dynamic Choice List
+Like `<choice>`, but generates the whole list of options from the output of a command
+at popup-open time. This avoids hard-coding one `<choice>` per option when the options
+come from a command that lists them (e.g. `batocera-audio list-profiles`).
+
+`display` is a `${...}` command whose stdout lines become the option **labels**, and
+`action_arg` is a `${...}` command whose stdout lines become the per-option **argument**
+appended to the base `action` (quoted automatically with `shlex.quote` so values with
+spaces or special characters are safe). The two lists are paired line by line.
+
+```xml
+<feature display="Audio Profile">
+  <choice_cmd display="${batocera-audio list-profiles | cut -f 2}"
+              action="batocera-audio set-profile"
+              action_arg="${batocera-audio list-profiles | cut -f 1}"
+              cache="10" />
+</feature>
+```
+
+Given a `list-profiles` output of:
+
+```
+auto    auto
+HiFi (Speaker)@alsa_card._sys_devices_platform_soc_5096000.codec_sound_card0    H616 Audio Codec Play HiFi quality Music (Speaker)
+pro-audio@alsa_card._sys_devices_platform_soc_5096000.codec_sound_card0         H616 Audio Codec Pro Audio
+```
+
+this is equivalent to writing:
+
+```xml
+<choice display="auto"                                   action="batocera-audio set-profile auto" />
+<choice display="H616 Audio Codec Play HiFi quality Music (Speaker)"
+          action="batocera-audio set-profile 'HiFi (Speaker)@alsa_card._sys_devices_platform_soc_5096000.codec_sound_card0'" />
+<choice display="H616 Audio Codec Pro Audio"
+          action="batocera-audio set-profile pro-audio@alsa_card._sys_devices_platform_soc_5096000.codec_sound_card0" />
+```
+
+The `display` and `action_arg` commands are prewarmed in the background and resolved
+through the same TTL cache as `<choice>` (see `cache`, default `5`), so opening the
+popup stays snappy and repeated opens don't re-spawn the commands.
+
+**Attributes:**
+- `display`: `${...}` command whose stdout lines become the option labels (required)
+- `action`: Base shell command run when an option is selected; the per-option argument is appended (required)
+- `action_arg`: `${...}` command whose stdout lines become the per-option argument appended to `action` (optional; when omitted only the base `action` runs)
+- `afterclick`: Command or action to execute after the main action completes (optional)
+- `cache`: Time-to-live in seconds for the cached `display`/`action_arg` results (optional, default `5`)
 
 #### `<tab>` - Tab Navigation
 Creates clickable tabs that switch between different content sections. Tabs must be defined in a feature, and each tab targets an `<hgroup>` by its `name` attribute.

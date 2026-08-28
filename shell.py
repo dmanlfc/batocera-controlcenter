@@ -32,48 +32,151 @@ def normalize_bool_str(s) -> bool:
     s = s.strip().lower()
     return s in ("1", "true", "on", "yes", "enabled")
 
+def extract_commands(s: str) -> list[str]:
+    """
+    Return the list of shell commands embedded in *s* as ${...} substitutions,
+    in order of appearance. Brace depth is tracked so nested braces inside a
+    command are handled. Returns [] when *s* has no ${...}.
+    """
+    if not s or "${" not in s:
+        return []
+    cmds: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n:
+        if i < n - 1 and s[i:i+2] == "${":
+            i += 2
+            depth = 1
+            cmd_start = i
+            while i < n and depth > 0:
+                if s[i] == '{':
+                    depth += 1
+                elif s[i] == '}':
+                    depth -= 1
+                i += 1
+            if depth == 0:
+                cmds.append(s[cmd_start:i-1].strip())
+            else:
+                break  # unmatched; stop
+        else:
+            i += 1
+    return cmds
+
+
+def _expand_with(s: str, resolve) -> str:
+    """
+    Core ${...} expansion. *resolve(cmd) -> str* is called for each embedded
+    command; the rest of *s* is returned verbatim. Brace depth is tracked so
+    nested braces inside a command are handled.
+    """
+    if not s or "${" not in s:
+        return s
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n:
+        if i < n - 1 and s[i:i+2] == "${":
+            start = i
+            i += 2
+            depth = 1
+            cmd_start = i
+            while i < n and depth > 0:
+                if s[i] == '{':
+                    depth += 1
+                elif s[i] == '}':
+                    depth -= 1
+                i += 1
+            if depth == 0:
+                cmd = s[cmd_start:i-1].strip()
+                out.append(resolve(cmd))
+            else:
+                # Unmatched braces; emit the remainder verbatim.
+                out.append(s[start:])
+                break
+        else:
+            out.append(s[i])
+            i += 1
+    return "".join(out)
+
+
 def expand_command_string(s: str) -> str:
     """
     Expand command substitutions in a string.
     Example: "${batocera-audio getSystemVolume}%" -> "80%"
     Supports multiple ${...} in one string, including nested braces.
     """
+    return _expand_with(s, lambda c: run_shell_capture_cached(c.strip()))
+
+
+def expand_command_string_cached(s: str, ttl_sec: float = 1.0,
+                                 timeout_sec: float = 3.0,
+                                 allow_block: bool = True) -> str:
+    """
+    Like expand_command_string, but each embedded command is resolved via the
+    shared TTL cache (run_shell_capture_cached). *allow_block=False* makes
+    every lookup non-forking (run_shell_cache_lookup): no subprocess is ever
+    spawned on the calling/UI thread, so a cold cache yields "" and a
+    background refresh warms the cache for the next call. Intended for
+    read-only display strings polled on the main loop.
+    """
     if not s or "${" not in s:
         return s
+    if allow_block:
+        def _r(c: str) -> str:
+            return run_shell_capture_cached(c.strip(), ttl_sec=ttl_sec,
+                                            timeout_sec=timeout_sec)
+    else:
+        def _r(c: str) -> str:
+            return run_shell_cache_lookup(c.strip(), ttl_sec=ttl_sec)
+    return _expand_with(s, _r)
 
-    result = s
-    # Find ${...} patterns with proper brace matching
-    i = 0
-    while i < len(result):
-        if i < len(result) - 1 and result[i:i+2] == "${":
-            # Found start of command
-            start = i
-            i += 2
-            depth = 1
-            cmd_start = i
 
-            # Find matching closing brace
-            while i < len(result) and depth > 0:
-                if result[i] == '{':
-                    depth += 1
-                elif result[i] == '}':
-                    depth -= 1
-                i += 1
+def shell_cache_has_all(cmds, ttl_sec: float) -> bool:
+    """True iff every command in *cmds* has a fresh (within *ttl_sec*) cached
+    result. Empty *cmds* -> True. Main-loop-safe (no fork, no I/O)."""
+    if not cmds:
+        return True
+    now = time.monotonic()
+    with _shell_cache_lock:
+        for c in cmds:
+            cached = _shell_cache.get(c)
+            if not cached or (now - cached[0]) >= ttl_sec:
+                return False
+    return True
 
-            if depth == 0:
-                # Extract and run command
-                cmd = result[cmd_start:i-1]
-                cmd_result = run_shell_capture_cached(cmd.strip())
-                # Replace ${cmd} with result
-                result = result[:start] + cmd_result + result[i:]
-                i = start + len(cmd_result)
-            else:
-                # Unmatched braces, skip
-                i = start + 2
-        else:
-            i += 1
 
-    return result
+def warm_shell_cache(cmds, timeout_sec: float = 3.0):
+    """
+    Spawn background workers to (re)compute every command in *cmds* and store
+    the results in the shared cache. Dedupes against refreshes already in
+    flight. Fire-and-forget; safe to call from the UI thread.
+    """
+    if not cmds:
+        return
+    to_run: list[str] = []
+    with _shell_cache_lock:
+        for c in cmds:
+            if not c:
+                continue
+            if c not in _refresh_in_flight:
+                _refresh_in_flight.add(c)
+                to_run.append(c)
+    if not to_run:
+        return
+
+    def _bg(cmd: str):
+        try:
+            result = run_shell_capture(cmd, timeout_sec=timeout_sec)
+            with _shell_cache_lock:
+                _shell_cache[cmd] = (time.monotonic(), result)
+        except Exception:
+            pass
+        finally:
+            with _shell_cache_lock:
+                _refresh_in_flight.discard(cmd)
+
+    for c in to_run:
+        threading.Thread(target=_bg, args=(c,), daemon=True).start()
 
 def run_shell_capture(cmd: str, timeout_sec: float = 3.0) -> str:
     """
@@ -139,6 +242,22 @@ def run_shell_capture_cached(cmd: str, ttl_sec: float = 1.0, timeout_sec: float 
     with _shell_cache_lock:
         _shell_cache[cmd] = (time.monotonic(), result)
     return result
+
+
+def run_shell_capture_lines(cmd: str, ttl_sec: float = 1.0,
+                            timeout_sec: float = 3.0) -> list[str]:
+    """
+    Run *cmd* via the shared TTL cache and return its stdout split into
+    non-empty lines. Intended for read-only commands that produce a list
+    (e.g. ``batocera-audio list-profiles``). Empty/whitespace-only lines are
+    dropped. Returns [] on failure or empty output.
+    """
+    if not cmd:
+        return []
+    out = run_shell_capture_cached(cmd, ttl_sec=ttl_sec, timeout_sec=timeout_sec)
+    if not out:
+        return []
+    return [ln for ln in out.splitlines() if ln.strip()]
 
 
 def run_shell_cache_lookup(cmd: str, ttl_sec: float = 5.0) -> str:
