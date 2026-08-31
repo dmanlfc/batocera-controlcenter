@@ -136,12 +136,16 @@ def evaluate_if_condition(condition: str, rendered_ids: set[str], force_fresh: b
 def should_render_element(element, rendered_ids: set[str]) -> bool:
     """
     Check if an element should be rendered based on its 'if' attribute.
+    This is only called one-shot at build time (the heartbeat re-evaluates via
+    evaluate_if_condition directly). so ${...} conditions are evaluated with
+    force_fresh=True: a blocking capture that always returns the real value
+    instead of a cold-cache "" that would wrongly hide the element.
     """
     if_condition = element.attrs.get("if", "").strip()
     if not if_condition:
         return True  # No condition = always render
     
-    result = evaluate_if_condition(if_condition, rendered_ids)
+    result = evaluate_if_condition(if_condition, rendered_ids, force_fresh=True)
     
     if DEBUG:
         element_info = f"{element.kind}"
