@@ -140,9 +140,11 @@ def should_render_element(element, rendered_ids: set[str]) -> bool:
     evaluate_if_condition directly). so ${...} conditions are evaluated with
     force_fresh=True: a blocking capture that always returns the real value
     instead of a cold-cache "" that would wrongly hide the element.
+    If an element has a refresh element, always render while the condition could change.
     """
     if_condition = element.attrs.get("if", "").strip()
-    if not if_condition:
+    refresh = element.attrs.get("refresh", "").strip()
+    if not if_condition or refresh:
         return True  # No condition = always render
     
     result = evaluate_if_condition(if_condition, rendered_ids, force_fresh=True)
@@ -457,13 +459,10 @@ class UICore:
             GtkLayerShell.set_layer(win, GtkLayerShell.Layer.OVERLAY)
             GtkLayerShell.set_keyboard_interactivity(win, False)
 
-            display = Gdk.Display.get_default()
-            if display.get_n_monitors() == 1:
-                monitor_idx = 0
-            else:
-                monitor_idx = 1 # on batocera, 0 is the main screen, and 1 is the backglass (i'm not completly sure it is correct)
-            monitor = display.get_monitor(monitor_idx)
-            GtkLayerShell.set_monitor(win, monitor)
+            # set the window on the correct screen
+            monitor = self.get_main_window_monitor_from_configuration()
+            if monitor is not None:
+                GtkLayerShell.set_monitor(win, monitor)
 
             # screen size on wayland
             GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
@@ -475,7 +474,13 @@ class UICore:
         win.set_decorated(False)
 
         if is_wayland:
-            geometry = monitor.get_geometry()
+
+            monitor = self.get_main_window_monitor_from_configuration()
+            if monitor is not None:
+                geometry = monitor.get_geometry()
+            else:
+                # in case the monitor is not yet here (happen one time to me)
+                geometry = Gdk.Rectangle(x=0, y=0, width=800, height=600)
 
             if self.fullscreen:
                 width = geometry.width
@@ -1576,8 +1581,79 @@ class UICore:
         self._gamepads.stopThread()
         self.stop_refresh()
 
+    def get_main_window_monitor(self):
+        gdk_win = self.window.get_window()
+        return self.window.get_display().get_monitor_at_window(gdk_win)
+
+    def get_main_window_monitor_from_configuration(self):
+        try:
+            display = Gdk.Display.get_default()
+            backend = (display.get_name() or "").lower()
+            is_wayland = "wayland" in backend
+
+            if is_wayland:
+                return self.get_main_window_monitor_from_configuration_wayland()
+            else:
+                return self.get_main_window_monitor_from_configuration_xorg()
+        except Exception:
+            # can return none in case a technical element is not ready (when plug/unplug hdmi cables for example)
+            return None
+
+    def get_main_window_monitor_from_configuration_xorg(self):
+        # from xrandr : get the connector name for the backglass (this is always the 2nd in the windows position /* not sure we can tell the same on wayland, while on xorg, it is set like this */) : we should find a nicer way to tell to the bcc the target screen
+        # from xrandr : get the window working area for the connector name
+        # from display.get_n_monitors() : get the monitor from the window working area
+        # gtk4 api provides a direct link between monitor and connector
+        display = Gdk.Display.get_default()
+        return display.get_monitor(0)
+
+    def get_main_window_monitor_from_configuration_wayland(self):
+        # 1. from /userdata/system/.config/labwc/rc.xml : get the connector name for the backglass : we should find a nicer way to tell to the bcc the target screen
+        # 2. from wlr-randr --json : get the window working area for the connector name
+        # 3. from display.get_n_monitors() : get the monitor from the window working area
+        # gtk4 api provides a direct link between monitor and connector
+        import subprocess
+        import json
+
+        # 1.
+        import xml.etree.ElementTree as ET
+        tree = ET.parse("/userdata/system/.config/labwc/rc.xml")
+        output_elem = tree.find(".//windowRule[@title='Batocera Control Center']/action[@name='MoveToOutput']/output")
+        if output_elem is not None:
+            target_connector = output_elem.text
+
+        # 2.
+        target_display = None
+        if target_connector:
+            output = subprocess.check_output(["wlr-randr", "--json"]).decode("utf-8")
+            displays = json.loads(output)
+            for idx, display in enumerate(displays):
+                if display.get("name") == target_connector:
+                    target_display = display
+                    break
+
+        # 3.
+        if target_display:
+            display = Gdk.Display.get_default()
+            for i in range(display.get_n_monitors()):
+                monitor = display.get_monitor(i)
+                if monitor:
+                    workarea = monitor.get_property("workarea")
+                    if target_display["position"]["x"] == workarea.x and target_display["position"]["y"] == workarea.y:
+                        # found
+                        return monitor
+
+        # nothing found, return the first one. should never happen
+        return display.get_monitor(0)
+
     def show(self, *_a):
         self.start_gamepad()
+
+        # choose the correct window (in case the screens configuration changed)
+        monitor = self.get_main_window_monitor_from_configuration()
+        if monitor is not None:
+            GtkLayerShell.set_monitor(self.window, monitor)
+
         self.window.present()
         self.reset_inactivity_timer()  # Reset timer on button click
         # start_refresh() does a force-fresh conditional recompute, so
@@ -4365,6 +4441,12 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     # Build children strictly in XML order, center value between buttons
     row._items = []
     row._item_index = 0
+    if_condition = (feat.attrs.get("if", "") or "").strip()
+    if if_condition:
+        # Track this widget for dynamic visibility updates
+        core._conditional_widgets.append((row, if_condition))
+        # Initially hide, will be shown after IDs are registered
+        row.set_visible(False)
 
     # For choice features, add the Select button right after the label
     choices = [c for c in feat.children if c.kind in ("choice", "choice_cmd")]
@@ -4748,13 +4830,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
         GtkLayerShell.set_layer(dialog, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_interactivity(dialog, False)
         # screen
-        display = Gdk.Display.get_default()
-        if display.get_n_monitors() == 1:
-            monitor_idx = 0
-        else:
-            monitor_idx = 1 # on batocera, 0 is the main screen, and 1 is the backglass (i'm not completly sure it is correct)
-        monitor = display.get_monitor(monitor_idx)
-        GtkLayerShell.set_monitor(dialog, monitor)
+        GtkLayerShell.set_monitor(dialog, core.get_main_window_monitor())
 
     # Track this dialog so it can be destroyed on timeout
     core._current_dialog = dialog
@@ -4996,13 +5072,7 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
         GtkLayerShell.set_layer(dialog, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_interactivity(dialog, False)
         # screen
-        display = Gdk.Display.get_default()
-        if display.get_n_monitors() == 1:
-            monitor_idx = 0
-        else:
-            monitor_idx = 1 # on batocera, 0 is the main screen, and 1 is the backglass (i'm not completly sure it is correct)
-        monitor = display.get_monitor(monitor_idx)
-        GtkLayerShell.set_monitor(dialog, monitor)
+        GtkLayerShell.set_monitor(dialog, core.get_main_window_monitor())
 
     # Track this dialog so it can be destroyed on timeout
     core._current_dialog = dialog
