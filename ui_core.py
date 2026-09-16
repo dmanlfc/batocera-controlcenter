@@ -1601,10 +1601,52 @@ class UICore:
 
     def get_main_window_monitor_from_configuration_xorg(self):
         # from xrandr : get the connector name for the backglass (this is always the 2nd in the windows position /* not sure we can tell the same on wayland, while on xorg, it is set like this */) : we should find a nicer way to tell to the bcc the target screen
-        # from xrandr : get the window working area for the connector name
-        # from display.get_n_monitors() : get the monitor from the window working area
+        import subprocess
+        import re
+
+        # 1. from xrandr : get the window working area for the connector names
+        # 2. find the monitor in position 2 by x
+        # 3. from display.get_n_monitors() : get the monitor from the window working area
         # gtk4 api provides a direct link between monitor and connector
+
+        # 1.
+        output = subprocess.check_output(["xrandr", "--geometry"]).decode("utf-8")
+        pattern = r"^(?P<connector>[\w-]+)\s+(?P<width>\d+)x(?P<height>\d+)\+(?P<x>\d+)\+(?P<y>\d+)$"
+        displays = []
+        for line in output.strip().splitlines():
+            match = re.match(pattern, line.strip())
+            if match:
+                displays.append({
+                    "connector": match.group("connector"),
+                    "position": {
+                        "width": int(match.group("width")),
+                        "height": int(match.group("height")),
+                        "x": int(match.group("x")),
+                        "y": int(match.group("y")),
+                    }
+                })
+
+        # 2.
+        min_x = None
+        target_display = None
+        for display in displays:
+            # take the one with the lower x not at position 0
+            if min_x is None or (min_x > display["position"]["x"] and display["position"]["x"] != 0) :
+                min_x = display["position"]["x"]
+                target_display = display
+
+        # 3.
         display = Gdk.Display.get_default()
+        if target_display is not None:
+            for i in range(display.get_n_monitors()):
+                monitor = display.get_monitor(i)
+                if monitor:
+                    workarea = monitor.get_property("workarea")
+                    if target_display["position"]["x"] == workarea.x and target_display["position"]["y"] == workarea.y:
+                        # found
+                        return monitor
+
+        # nothing found, return the first one. should never happen
         return display.get_monitor(0)
 
     def get_main_window_monitor_from_configuration_wayland(self):
@@ -1617,6 +1659,7 @@ class UICore:
 
         # 1.
         import xml.etree.ElementTree as ET
+        target_connector = None
         tree = ET.parse("/userdata/system/.config/labwc/rc.xml")
         output_elem = tree.find(".//windowRule[@title='Batocera Control Center']/action[@name='MoveToOutput']/output")
         if output_elem is not None:
@@ -1624,7 +1667,7 @@ class UICore:
 
         # 2.
         target_display = None
-        if target_connector:
+        if target_connector is not None:
             output = subprocess.check_output(["wlr-randr", "--json"]).decode("utf-8")
             displays = json.loads(output)
             for idx, display in enumerate(displays):
@@ -1633,8 +1676,8 @@ class UICore:
                     break
 
         # 3.
-        if target_display:
-            display = Gdk.Display.get_default()
+        display = Gdk.Display.get_default()
+        if target_display is not None:
             for i in range(display.get_n_monitors()):
                 monitor = display.get_monitor(i)
                 if monitor:
