@@ -473,7 +473,7 @@ class UICore:
             # set the window on the correct screen
             monitor = self.get_main_window_monitor_from_configuration()
             if monitor is not None:
-                core.set_monitor(win, monitor)
+                self.set_monitor(win, monitor)
 
             # screen size on wayland
             GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
