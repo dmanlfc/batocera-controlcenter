@@ -442,6 +442,17 @@ class UICore:
 
         return ref_w, ref_h
 
+    def set_monitor(self, window, monitor):
+        try:
+            GtkLayerShell.set_monitor(window, monitor)
+        except Exception as e:
+            pass
+
+        winwidth, winheight = window.get_size()
+        geometry = monitor.get_geometry()
+        x = geometry.x + (geometry.width  - winwidth)//2
+        y = geometry.y + (geometry.height - winheight)//2
+        window.move(x, y) # have an action on xorg only
 
     # ---- Window / CSS ----
     def build_window(self):
@@ -462,7 +473,7 @@ class UICore:
             # set the window on the correct screen
             monitor = self.get_main_window_monitor_from_configuration()
             if monitor is not None:
-                GtkLayerShell.set_monitor(win, monitor)
+                core.set_monitor(win, monitor)
 
             # screen size on wayland
             GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
@@ -583,6 +594,11 @@ class UICore:
                 if sh >= 1080:
                     max_height = int(sh * 0.80)
                     scale_class = "full"
+
+            # set the window on the correct screen
+            monitor = self.get_main_window_monitor_from_configuration()
+            if monitor is not None:
+                self.set_monitor(win, monitor)
 
         # style
         win.get_style_context().add_class("popup-root")
@@ -1595,6 +1611,7 @@ class UICore:
                 return self.get_main_window_monitor_from_configuration_wayland()
             else:
                 return self.get_main_window_monitor_from_configuration_xorg()
+
         except Exception:
             # can return none in case a technical element is not ready (when plug/unplug hdmi cables for example)
             return None
@@ -1627,12 +1644,10 @@ class UICore:
                 })
 
         # 2.
-        min_x = None
         target_display = None
         for display in displays:
-            # take the one with the lower x not at position 0
-            if min_x is None or (min_x > display["position"]["x"] and display["position"]["x"] != 0) :
-                min_x = display["position"]["x"]
+            # take the one with x=0
+            if display["position"]["x"] == 0 :
                 target_display = display
 
         # 3.
@@ -1695,7 +1710,7 @@ class UICore:
         # choose the correct window (in case the screens configuration changed)
         monitor = self.get_main_window_monitor_from_configuration()
         if monitor is not None:
-            GtkLayerShell.set_monitor(self.window, monitor)
+            self.set_monitor(self.window, monitor)
 
         self.window.present()
         self.reset_inactivity_timer()  # Reset timer on button click
@@ -4873,7 +4888,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
         GtkLayerShell.set_layer(dialog, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_interactivity(dialog, False)
         # screen
-        GtkLayerShell.set_monitor(dialog, core.get_main_window_monitor())
+        core.set_monitor(dialog, core.get_main_window_monitor())
 
     # Track this dialog so it can be destroyed on timeout
     core._current_dialog = dialog
@@ -5115,7 +5130,7 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
         GtkLayerShell.set_layer(dialog, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_interactivity(dialog, False)
         # screen
-        GtkLayerShell.set_monitor(dialog, core.get_main_window_monitor())
+        core.set_monitor(dialog, core.get_main_window_monitor())
 
     # Track this dialog so it can be destroyed on timeout
     core._current_dialog = dialog
