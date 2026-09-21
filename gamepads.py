@@ -268,19 +268,21 @@ class GamePads:
         caps = device.capabilities()
         code_values: dict[int, int]  = {}
         i = 0
-        for code, _ in caps[evdev.ecodes.EV_ABS]:
-            if code < evdev.ecodes.ABS_HAT0X:
-                code_values[code] = relaxed_values[i]
-                i = i+1
+        if evdev.ecodes.EV_ABS in caps:
+            for code, _ in caps[evdev.ecodes.EV_ABS]:
+                if code < evdev.ecodes.ABS_HAT0X:
+                    code_values[code] = relaxed_values[i]
+                    i = i+1
 
         # dict with es input names
         res: dict[str, _RelaxedDict] = {}
-        for code, _ in caps[evdev.ecodes.EV_ABS]:
-            if code < evdev.ecodes.ABS_HAT0X:
-                # sdl values : from -32000 to 32000 / do not put < 0 cause a wheel/pad could be not correctly centered
-                # 3 possible initial positions <1----------------|-------2-------|----------------3>
-                val = code_values[code]
-                res[code] = { "centered":  val > -4000 and val < 4000, "reversed": val > 4000 }
+        if evdev.ecodes.EV_ABS in caps:
+            for code, _ in caps[evdev.ecodes.EV_ABS]:
+                if code < evdev.ecodes.ABS_HAT0X:
+                    # sdl values : from -32000 to 32000 / do not put < 0 cause a wheel/pad could be not correctly centered
+                    # 3 possible initial positions <1----------------|-------2-------|----------------3>
+                    val = code_values[code]
+                    res[code] = { "centered":  val > -4000 and val < 4000, "reversed": val > 4000 }
         return res
 
     @staticmethod
