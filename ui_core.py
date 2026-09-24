@@ -1841,8 +1841,14 @@ class UICore:
         # with buttons that were used to launch the application
         if hasattr(self, '_startup_time'):
             elapsed = time.time() - self._startup_time
-            if elapsed < self._startup_ignore_duration:
-                return
+            if elapsed < 0:
+                # bcc starts at boot, before the network connects (or just in the seconds after),
+                # the network provides clock update that make sometimes date in the future (h700/cubexx)
+                # so, reset in case of date in the future...
+                self._startup_time = time.time()
+            else:
+                if elapsed < self._startup_ignore_duration:
+                    return
         
         # Reset inactivity timer on any gamepad action
         try:
