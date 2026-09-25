@@ -108,9 +108,17 @@ class DocViewer:
             GtkLayerShell.init_for_window(viewer)
             GtkLayerShell.set_layer(viewer, GtkLayerShell.Layer.OVERLAY)
             GtkLayerShell.set_keyboard_interactivity(viewer, False)
-            # screen
-            display = Gdk.Display.get_default()
-            monitor = display.get_monitor(0)  # on batocera, 0 is the main screen, and 1 is the backglass
+            # screen: follow the parent (BCC) window's screen, fall back to primary
+            monitor = None
+            try:
+                display = Gdk.Display.get_default()
+                if parent_window and parent_window.get_window() \
+                        and hasattr(display, "get_monitor_at_window"):
+                    monitor = display.get_monitor_at_window(parent_window.get_window())
+            except Exception:
+                monitor = None
+            if monitor is None:
+                monitor = Gdk.Display.get_default().get_monitor(0)
             GtkLayerShell.set_monitor(viewer, monitor)
             # screen size on wayland
             GtkLayerShell.set_anchor(viewer, GtkLayerShell.Edge.TOP, True)

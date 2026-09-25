@@ -20,6 +20,8 @@ from gi.repository import Gdk
 # Default to disable AT-SPI DBus chatter for performance/stability
 os.environ.setdefault("NO_AT_BRIDGE", "1")
 
+BATOCERA_CONF = "/userdata/system/batocera.conf"
+
 def normalize_bool_str(s) -> bool:
     if s is None:
         return False
@@ -329,4 +331,186 @@ def get_primary_geometry():
         g = mon.get_geometry()
         return g.x, g.y, g.width, g.height
     return (0, 0, 1280, 720)
+
+def settings_get(key: str) -> str | None:
+    try:
+        result = subprocess.run(["batocera-settings-get", key],
+                                capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            value = (result.stdout or "").strip()
+            value = value.strip('"').strip("'").strip()
+            return value if value else None
+    except Exception:
+        pass
+    return None
+
+def settings_set(key: str, value: str) -> bool:
+    try:
+        result = subprocess.run(["batocera-settings-set", key, value],
+                                capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+def get_output_list() -> list[str]:
+    """
+    Return the list of connected video outputs (connector names, e.g.
+    ["HDMI-A-1", "HDMI-A-2"]). Tries `batocera-resolution listOutputs`,
+    then `wlr-randr`/`xrandr`, then GDK monitors. Empty list on failure.
+    """
+    try:
+        result = subprocess.run(["batocera-resolution", "listOutputs"],
+                                capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            outs = [l.strip() for l in (result.stdout or "").splitlines()
+                    if l.strip()]
+            if outs:
+                return outs
+    except Exception:
+        pass
+    for cmdline in ("wlr-randr", "xrandr"):
+        try:
+            result = subprocess.run([cmdline], capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                outs = [l.split()[0] for l in (result.stdout or "").splitlines()
+                        if l.strip() and (" connected" in l or "CONNECTED" in l)]
+                if outs:
+                    return outs
+        except Exception:
+            pass
+    # Last resort: GDK connector names
+    try:
+        display = Gdk.Display.get_default()
+        if display:
+            outs = []
+            for i in range(display.get_n_monitors()):
+                mon = display.get_monitor(i)
+                if hasattr(mon, "get_connector"):
+                    c = mon.get_connector()
+                    if c:
+                        outs.append(c)
+            if outs:
+                return outs
+    except Exception:
+        pass
+    return []
+
+def _wayland_output_names(n: int) -> list[str]:
+    """
+    Best-effort list of connected output names, in compositor order, to map a
+    connector name (e.g. "DSI-2") to a GDK monitor index. Used when GDK lacks
+    get_connector(). Tries wlr-randr, then batocera-resolution listOutputs.
+    """
+    # wlr-randr: "Output: HDMI-A-1 ..." blocks, only "ENABLED"/connected ones
+    try:
+        result = subprocess.run(["wlr-randr"], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            names = []
+            cur = None
+            enabled = False
+            for line in (result.stdout or "").splitlines():
+                if line.startswith("Output: "):
+                    if cur and enabled:
+                        names.append(cur)
+                    cur = line[len("Output: "):].strip().split()[0]
+                    enabled = "ENABLED" in line
+                elif cur and "Enabled: yes" in line:
+                    enabled = True
+                elif cur and "Enabled: no" in line:
+                    enabled = False
+            if cur and enabled:
+                names.append(cur)
+            if names:
+                return names
+    except Exception:
+        pass
+    # batocera-resolution listOutputs prints connected outputs in order
+    try:
+        result = subprocess.run(["batocera-resolution", "listOutputs"],
+                                capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            names = [l.strip() for l in (result.stdout or "").splitlines() if l.strip()]
+            if names:
+                return names
+    except Exception:
+        pass
+    return []
+
+def select_monitor(display: Gdk.Display, screen_arg: str | None = None) -> Gdk.Monitor | None:
+    """
+    Pick the monitor the Control Center should start on.
+
+    Priority:
+      1. *screen_arg* (from --screen CLI override): connector name or index
+      2. controlcenter.screen from batocera.conf (connector name or index)
+      3. Legacy default: monitor 1 when multiple monitors, else monitor 0
+
+    Matching by name uses Gdk.Monitor.get_connector() when available; on X11
+    monitors have no connector name from GDK, so we try an xrandr name->index
+    lookup. Returns None if no monitor could be selected (caller keeps its
+    own default).
+    """
+    n = display.get_n_monitors() if display else 0
+    if n == 0:
+        return None
+
+    def by_name(name: str) -> Gdk.Monitor | None:
+        if not name:
+            return None
+        # Wayland: GDK knows the connector (when available)
+        for i in range(n):
+            mon = display.get_monitor(i)
+            if hasattr(mon, "get_connector"):
+                try:
+                    if (mon.get_connector() or "") == name:
+                        return mon
+                except Exception:
+                    pass
+        # Wayland without get_connector(): map output name to monitor index
+        # via the compositor's connected-output list (compositor order).
+        names = _wayland_output_names(n)
+        if name in names and names.index(name) < n:
+            return display.get_monitor(names.index(name))
+        # X11: match xrandr output name to monitor index via geometry
+        try:
+            result = subprocess.run(["xrandr", "--query"],
+                                    capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                # index of the *connected* output among connected ones
+                connected = [l.split()[0] for l in (result.stdout or "").splitlines()
+                             if " connected" in l]
+                if name in connected:
+                    idx = connected.index(name)
+                    if idx < n:
+                        return display.get_monitor(idx)
+        except Exception:
+            pass
+        return None
+
+    def by_index(idx_str: str) -> Gdk.Monitor | None:
+        try:
+            idx = int(idx_str)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= idx < n:
+            return display.get_monitor(idx)
+        return None
+
+    # 1. CLI override
+    if screen_arg:
+        mon = by_name(screen_arg) or by_index(screen_arg)
+        if mon is not None:
+            return mon
+
+    # 2. Saved setting
+    saved = settings_get("controlcenter.screen")
+    if saved:
+        mon = by_name(saved) or by_index(saved)
+        if mon is not None:
+            return mon
+
+    # 3. Legacy default: 2nd screen if it exists (backglass), else primary
+    if n > 1:
+        return display.get_monitor(1)
+    return display.get_monitor(0)
 
