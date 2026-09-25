@@ -149,9 +149,11 @@ def should_render_element(element, rendered_ids: set[str]) -> bool:
     evaluate_if_condition directly). so ${...} conditions are evaluated with
     force_fresh=True: a blocking capture that always returns the real value
     instead of a cold-cache "" that would wrongly hide the element.
+    If an element has a refresh element, always render while the condition could change.
     """
     if_condition = element.attrs.get("if", "").strip()
-    if not if_condition:
+    refresh = element.attrs.get("refresh", "").strip()
+    if not if_condition or refresh:
         return True  # No condition = always render
     
     result = evaluate_if_condition(if_condition, rendered_ids, force_fresh=True)
@@ -451,7 +453,6 @@ class UICore:
             debug_print(f"[REFSIZE] Failed to compute reference size: {e}")
 
         return ref_w, ref_h
-
 
     # ---- Window / CSS ----
     # Compute and apply the window layout (size, margins, scale class) for the
@@ -1695,6 +1696,7 @@ class UICore:
     def show(self, *_a):
         self._apply_screen_selection()
         self.start_gamepad()
+
         self.window.present()
         self.reset_inactivity_timer()  # Reset timer on button click
         # start_refresh() does a force-fresh conditional recompute, so
@@ -1824,8 +1826,14 @@ class UICore:
         # with buttons that were used to launch the application
         if hasattr(self, '_startup_time'):
             elapsed = time.time() - self._startup_time
-            if elapsed < self._startup_ignore_duration:
-                return
+            if elapsed < 0:
+                # bcc starts at boot, before the network connects (or just in the seconds after),
+                # the network provides clock update that make sometimes date in the future (h700/cubexx)
+                # so, reset in case of date in the future...
+                self._startup_time = time.time()
+            else:
+                if elapsed < self._startup_ignore_duration:
+                    return
         
         # Reset inactivity timer on any gamepad action
         try:
@@ -4482,6 +4490,12 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     # Build children strictly in XML order, center value between buttons
     row._items = []
     row._item_index = 0
+    if_condition = (feat.attrs.get("if", "") or "").strip()
+    if if_condition:
+        # Track this widget for dynamic visibility updates
+        core._conditional_widgets.append((row, if_condition))
+        # Initially hide, will be shown after IDs are registered
+        row.set_visible(False)
 
     # For choice features, add the Select button right after the label
     choices = [c for c in feat.children if c.kind in ("choice", "choice_cmd")]

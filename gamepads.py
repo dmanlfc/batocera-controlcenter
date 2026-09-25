@@ -51,6 +51,9 @@ class GamePads:
                         self._gamepad_devices.append(device)
             except Exception as e:
                 debug_print(f"[GAMEPAD] Error checking device {event}: {e}")
+                if DEBUG:
+                    import traceback
+                    traceback.print_exc()
 
     def _grab_devices(self):
         for device in self._gamepad_devices:
@@ -60,6 +63,9 @@ class GamePads:
                 debug_print(f"[GAMEPAD] Grabbed exclusive access to {device.name}")
             except Exception as e:
                 debug_print(f"[GAMEPAD] Could not grab {device.name}: {e}")
+                if DEBUG:
+                    import traceback
+                    traceback.print_exc()
 
     def _register_device(self, dev, pads_configs, mappings, axis_infos, axis_states):
         """Compute and store the input mapping + axis calibration for one
@@ -79,27 +85,28 @@ class GamePads:
 
         if "axis" in mapping:
             for code in mapping["axis"]:
-                abs_info = dev.absinfo(code)
-                center = (abs_info.max + abs_info.min) // 2
-                if code in relaxValues and relaxValues[code]["centered"]:
-                    threshold = (abs_info.max - abs_info.min) // 4  # Original 25% deadzone
-                    bornemin = abs_info.min + threshold
-                    bornemax = abs_info.max - threshold
-                    debug_print(f"[GAMEPAD] Axis {code} centered deadzone: {bornemin} to {bornemax} (threshold: {threshold}, range: {abs_info.min}-{abs_info.max})")
-                else:
-                    bornemin = abs_info.min -1 # can't reach it
-                    bornemax = center
-                    debug_print(f"[GAMEPAD] Axis {code} non-centered deadzone: {bornemin} to {bornemax} (center: {center}, range: {abs_info.min}-{abs_info.max})")
-                axis_infos[dev.fd][code] = { "bornemin": bornemin, "bornemax": bornemax }
+                if code in relaxValues: # the code must exist to call dev.absinfo
+                    abs_info = dev.absinfo(code)
+                    center = (abs_info.max + abs_info.min) // 2
+                    if relaxValues[code]["centered"]:
+                        threshold = (abs_info.max - abs_info.min) // 4  # Original 25% deadzone
+                        bornemin = abs_info.min + threshold
+                        bornemax = abs_info.max - threshold
+                        debug_print(f"[GAMEPAD] Axis {code} centered deadzone: {bornemin} to {bornemax} (threshold: {threshold}, range: {abs_info.min}-{abs_info.max})")
+                    else:
+                        bornemin = abs_info.min -1 # can't reach it
+                        bornemax = center
+                        debug_print(f"[GAMEPAD] Axis {code} non-centered deadzone: {bornemin} to {bornemax} (center: {center}, range: {abs_info.min}-{abs_info.max})")
+                    axis_infos[dev.fd][code] = { "bornemin": bornemin, "bornemax": bornemax }
 
-                # Initialize axis state properly using the same logic as event handling
-                current_value = abs_info.value
-                initial_axis_value = 0
-                if current_value < bornemin:
-                    initial_axis_value = -1
-                elif current_value > bornemax:
-                    initial_axis_value = 1
-                axis_states[dev.fd][code] = initial_axis_value
+                    # Initialize axis state properly using the same logic as event handling
+                    current_value = abs_info.value
+                    initial_axis_value = 0
+                    if current_value < bornemin:
+                        initial_axis_value = -1
+                    elif current_value > bornemax:
+                        initial_axis_value = 1
+                    axis_states[dev.fd][code] = initial_axis_value
 
     def _remove_device(self, dev, mappings, axis_infos, axis_states):
         """Drop a device that has been unplugged: release it and forget its
@@ -124,11 +131,17 @@ class GamePads:
             dev = InputDevice(device_node)
         except Exception as e:
             debug_print(f"[GAMEPAD] Hotplug: could not open {device_node}: {e}")
+            if DEBUG:
+                import traceback
+                traceback.print_exc()
             return
         try:
             dev.grab()
         except Exception as e:
             debug_print(f"[GAMEPAD] Hotplug: could not grab {dev.name}: {e}")
+            if DEBUG:
+                import traceback
+                traceback.print_exc()
         self._gamepad_devices.append(dev)
         self._register_device(dev, pads_configs, mappings, axis_infos, axis_states)
         debug_print(f"[GAMEPAD] Hotplug: added gamepad {dev.name} at {device_node}")
@@ -231,6 +244,9 @@ class GamePads:
                 self.listen(handle_gamepad_action)
             except Exception as e:
                 debug_print(f"[GAMEPAD] Evdev gamepad error: {e}")
+                if DEBUG:
+                    import traceback
+                    traceback.print_exc()
             finally:
                 self.close_devices()
             debug_print("[GAMEPAD] end thread: evdev")
@@ -268,19 +284,21 @@ class GamePads:
         caps = device.capabilities()
         code_values: dict[int, int]  = {}
         i = 0
-        for code, _ in caps[evdev.ecodes.EV_ABS]:
-            if code < evdev.ecodes.ABS_HAT0X:
-                code_values[code] = relaxed_values[i]
-                i = i+1
+        if evdev.ecodes.EV_ABS in caps:
+            for code, _ in caps[evdev.ecodes.EV_ABS]:
+                if code < evdev.ecodes.ABS_HAT0X:
+                    code_values[code] = relaxed_values[i]
+                    i = i+1
 
         # dict with es input names
         res: dict[str, _RelaxedDict] = {}
-        for code, _ in caps[evdev.ecodes.EV_ABS]:
-            if code < evdev.ecodes.ABS_HAT0X:
-                # sdl values : from -32000 to 32000 / do not put < 0 cause a wheel/pad could be not correctly centered
-                # 3 possible initial positions <1----------------|-------2-------|----------------3>
-                val = code_values[code]
-                res[code] = { "centered":  val > -4000 and val < 4000, "reversed": val > 4000 }
+        if evdev.ecodes.EV_ABS in caps:
+            for code, _ in caps[evdev.ecodes.EV_ABS]:
+                if code < evdev.ecodes.ABS_HAT0X:
+                    # sdl values : from -32000 to 32000 / do not put < 0 cause a wheel/pad could be not correctly centered
+                    # 3 possible initial positions <1----------------|-------2-------|----------------3>
+                    val = code_values[code]
+                    res[code] = { "centered":  val > -4000 and val < 4000, "reversed": val > 4000 }
         return res
 
     @staticmethod
