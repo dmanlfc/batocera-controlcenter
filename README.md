@@ -38,16 +38,28 @@ When run without arguments, the application searches for configuration files in 
 
 This allows users to customize their configuration without modifying system files.
 
+## Persistent Settings (batocera.conf)
+
+Some settings are stored in `/userdata/system/batocera.conf` (via the `batocera-settings-get` / `batocera-settings-set` commands), following standard Batocera conventions:
+
+- `controlcenter.screen`: output (screen) the Control Center starts on when several screens are connected. Set it from the System tab of the Control Center ("BCC Screen"), or from the command line:
+  ```ini
+  controlcenter.screen=HDMI-A-1
+  ```
+  Use `batocera-resolution listOutputs` to list available output names. When unset or when the saved output no longer exists, the Control Center uses its legacy default (2nd screen if present, else the primary one).
+
 ## Command Line Parameters
 
 ```
-./controlcenter.py [--fullscreen] [--window WIDTHxHEIGHT] [--hidden] [timeout] [xml_path] [css_path]
+./controlcenter.py [--fullscreen] [--window WIDTHxHEIGHT] [--hidden] [--screen OUTPUT] [timeout] [xml_path] [css_path]
 ```
 
 **Options:**
 - `--fullscreen`: Run in fullscreen mode (covers entire screen)
 - `--window WIDTHxHEIGHT`: Set custom window size (e.g., `--window 800x600`)
 - `--hidden`: Start with window hidden (useful for background processes)
+- `--screen OUTPUT`: Screen/output to start on — connector name (e.g. `HDMI-A-1`) or monitor index (e.g. `1`). Overrides the saved setting.
+- `--screen HDMI-A-1`: Run on the named output
 
 **Positional arguments:**
 - `timeout`: Inactivity timeout in seconds (default: 0 = never close)
@@ -66,6 +78,9 @@ This allows users to customize their configuration without modifying system file
 
 # Run fullscreen with 30-second timeout
 ./controlcenter.py --fullscreen 30
+
+# Run on a specific screen
+./controlcenter.py --screen HDMI-A-1
 
 # Run with custom size and configuration files
 ./controlcenter.py --window 800x600 config.xml style.css

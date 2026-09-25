@@ -27,6 +27,8 @@ except:
 import locale
 _ = locale.gettext
 
+from shell import settings_get, settings_set, get_output_list, select_monitor
+
 ACTION_DEBOUNCE_MS = 100  # Faster response
 WINDOW_TITLE = "Batocera Control Center"
 
@@ -69,6 +71,13 @@ def handle_afterclick_after(core: 'UICore', afterclick_attr: str):
     if afterclick == "bcc_refresh":
         # Force the UI to re-read all shell commands and toggle visibility
         GLib.idle_add(core.schedule_recompute_conditionals)
+    elif afterclick == "bcc_rescreen":
+        # Re-apply the saved screen selection and re-layout the window for
+        # the selected monitor's geometry, live (no restart needed).
+        def _rescreen():
+            core._apply_screen_selection()
+            return False
+        GLib.idle_add(_rescreen)
     elif afterclick.startswith("${") and afterclick.endswith("}"):
         # Command substitution - execute the command
         cmd = afterclick[2:-1]  # Remove ${ and }
@@ -337,10 +346,13 @@ def parse_dimension(value: str, reference_size: int = 100) -> int | None:
 
 #---------------------------------- main class
 class UICore:
-    def __init__(self, css_path: str, fullscreen: bool = False, window_size: tuple[int, int] | None = None):
+    def __init__(self, css_path: str, fullscreen: bool = False, window_size: tuple[int, int] | None = None,
+                 screen: str | None = None):
         self.css_path = css_path
         self.fullscreen = fullscreen
         self.window_size = window_size
+        self.screen = screen  # connector name or index; overrides batocera.conf
+        self._selected_monitor = None  # last monitor applied (wayland)
         self.window: Gtk.Window | None = None
         self.focus_rows: list[Gtk.EventBox] = []
         self.focus_index: int = 0
@@ -442,6 +454,87 @@ class UICore:
 
 
     # ---- Window / CSS ----
+    # Compute and apply the window layout (size, margins, scale class) for the
+    # geometry of *monitor* on the layer-shell surface *win*. Used at build time
+    # and whenever the selected screen changes, so the window re-centers on
+    # screens with different resolutions.
+    def _apply_wayland_layout(self, win: Gtk.Window, monitor: Gdk.Monitor):
+        geometry = monitor.get_geometry()
+        sw, sh = geometry.width, geometry.height
+
+        if self.fullscreen:
+            width, max_height = sw, sh
+            scale_class = "full"
+            width_margin = height_margin = 0
+        elif self.window_size:
+            width, max_height = self.window_size
+            scale_class = "full" if width >= 1280 and max_height >= 720 else "small"
+            # A fixed --window size may exceed the selected monitor's
+            # resolution (e.g. dual-screen devices with different geometries
+            # and a launcher-passed size): clamp to fit, keep margins >= 0.
+            width = min(width, sw)
+            max_height = min(max_height, sh)
+            width_margin = max(0, (sw - width) // 2)
+            height_margin = max(0, (sh - max_height) // 5)
+        else:
+            width, height = sw, sh
+            scale_class = "small"
+            if sw >= 1280:
+                width = int(sw * 0.90)
+                scale_class = "full"
+            if sw >= 1920:
+                width = int(sw * 0.70)
+                scale_class = "full"
+            if sh >= 720:
+                height = int(sh * 0.95)
+                if scale_class == "small":
+                    scale_class = "medium"
+            if sh >= 1080:
+                height = int(sh * 0.80)
+                scale_class = "full"
+
+            if sw < 1280:
+                # Small screen (e.g. 720x720 handheld): use the full output
+                # with no margins. The layer-shell surface is anchored to
+                # all four edges, so zero margins make it cover the whole
+                # screen, giving the content room and letting the scrolled
+                # window handle overflow (footer not clipped).
+                max_height = sh
+                width = sw
+                width_margin = 0
+                height_margin = 0
+            else:
+                # Larger screen: keep the centered, margin-based layout.
+                max_height = sh
+                width_margin = (sw - width) // 2
+                height_margin = (sh - height) // 5
+
+        debug_print(f"[DPI] Wayland layout on {sw}x{sh}: win:{width}x{max_height} margins:{width_margin}x{height_margin}")
+
+        # Update stored dimensions (used by rows, reference sizing, X11-less paths)
+        self._window_width = width
+        self._max_height = max_height
+        self._screen_x = self._screen_y = 0
+        self._screen_width = sw
+        self._screen_height = sh
+
+        # Update scale CSS class
+        if getattr(self, "_scale_class", None) and self._scale_class != scale_class:
+            try:
+                ctx = win.get_style_context()
+                ctx.remove_class(f"scale-{self._scale_class}")
+                ctx.add_class(f"scale-{scale_class}")
+            except Exception:
+                pass
+        self._scale_class = scale_class
+
+        # Apply margins and resize the surface
+        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.TOP, height_margin)
+        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.BOTTOM, 4 * height_margin)
+        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.LEFT, width_margin)
+        GtkLayerShell.set_margin(win, GtkLayerShell.Edge.RIGHT, width_margin)
+        win.resize(width, max_height)
+
     def build_window(self):
         display = Gdk.Display.get_default()
         backend = (display.get_name() or "").lower()
@@ -458,12 +551,10 @@ class UICore:
             GtkLayerShell.set_keyboard_interactivity(win, False)
 
             display = Gdk.Display.get_default()
-            if display.get_n_monitors() == 1:
-                monitor_idx = 0
-            else:
-                monitor_idx = 1 # on batocera, 0 is the main screen, and 1 is the backglass (i'm not completly sure it is correct)
-            monitor = display.get_monitor(monitor_idx)
-            GtkLayerShell.set_monitor(win, monitor)
+            monitor = select_monitor(display, self.screen)
+            self._selected_monitor = monitor
+            if monitor is not None:
+                GtkLayerShell.set_monitor(win, monitor)
 
             # screen size on wayland
             GtkLayerShell.set_anchor(win, GtkLayerShell.Edge.TOP, True)
@@ -475,72 +566,11 @@ class UICore:
         win.set_decorated(False)
 
         if is_wayland:
-            geometry = monitor.get_geometry()
-
-            if self.fullscreen:
-                width = geometry.width
-                height =  geometry.height
-                max_height = height
-                x0 = 0
-                y0 = 0
-                sw = width
-                sh = height
-                scale_class = "full"
-            else:
-                if self.window_size:
-                    width, height = self.window_size
-                    scale_class = "full" if width >= 1280 and max_height >= 720 else "small"
-                    sw, sh = width, height
-                else:
-                    width, height = geometry.width, geometry.height
-                    sw, sh = width, height
-
-                    scale_class = "small"
-                    if sw >= 1280:
-                        width = int(sw * 0.90)
-                        scale_class = "full"
-                    if sw >= 1920:
-                        width = int(sw * 0.70)
-                        scale_class = "full"
-                    if sh >= 720:
-                        height = int(sh * 0.95)
-                        if scale_class == "small":
-                            scale_class = "medium"
-                    if sh >= 1080:
-                        height = int(sh * 0.80)
-                        scale_class = "full"
-
-                debug_print(f"[DPI] Wayland BCC win:{width}x{height} screen:{sw}x{sh}")
-
-                if sw < 1280:
-                    # Small screen (e.g. 720x720 handheld): use the full output
-                    # with no margins. The layer-shell surface is anchored to
-                    # all four edges, so zero margins make it cover the whole
-                    # screen, giving the content room and letting the scrolled
-                    # window handle overflow (footer not clipped).
-                    max_height = sh
-                    x0 = 0
-                    y0 = 0
-                    width = sw
-                    height = sh
-                    width_margin = 0
-                    height_margin = 0
-                else:
-                    # Larger screen: keep the centered, margin-based layout.
-                    max_height = sh
-                    x0 = (sw-width) // 2
-                    y0 = (sh-height) // 5
-                    sw = width
-                    sh = height
-                    width_margin = x0
-                    height_margin = y0
-
-            debug_print(f"[DPI] Wayland startup geometry:{sw}x{sh} margins:{width_margin}x{height_margin}")
-            # apply margin
-            GtkLayerShell.set_margin(win, GtkLayerShell.Edge.TOP, height_margin)
-            GtkLayerShell.set_margin(win, GtkLayerShell.Edge.BOTTOM, 4*height_margin)
-            GtkLayerShell.set_margin(win, GtkLayerShell.Edge.LEFT, width_margin)
-            GtkLayerShell.set_margin(win, GtkLayerShell.Edge.RIGHT, width_margin)
+            monitor = monitor if monitor is not None else display.get_monitor(0)
+            self._apply_wayland_layout(win, monitor)
+            self._applied_layout_geometry = (self._screen_width, self._screen_height)
+            scale_class = self._scale_class
+            x0 = y0 = 0  # set by _apply_wayland_layout (Wayland positioning is margin-based)
         else:
             # xorg
             win.set_type_hint(Gdk.WindowTypeHint.DIALOG)
@@ -549,7 +579,12 @@ class UICore:
             win.set_skip_taskbar_hint(False)
             win.set_modal(False)
             
-            x0, y0, sw, sh = get_primary_geometry()
+            x11_monitor = select_monitor(display, self.screen)
+            if x11_monitor is not None and hasattr(x11_monitor, "get_geometry"):
+                g = x11_monitor.get_geometry()
+                x0, y0, sw, sh = g.x, g.y, g.width, g.height
+            else:
+                x0, y0, sw, sh = get_primary_geometry()
             debug_print(f"[DPI] X11 startup geometry:{sw}x{sh}")
             # Handle fullscreen mode
             if self.fullscreen:
@@ -586,6 +621,14 @@ class UICore:
         win.get_style_context().add_class(f"scale-{scale_class}")
 
         # Store dimensions for positioning
+        if is_wayland:
+            # width/max_height/sw/sh were computed and stored by
+            # _apply_wayland_layout (Wayland positioning is margin-based)
+            width = self._window_width
+            max_height = self._max_height
+            x0 = y0 = 0
+            sw = self._screen_width
+            sh = self._screen_height
         self._window_width = width
         self._max_height = max_height
         self._screen_x = x0
@@ -646,6 +689,22 @@ class UICore:
             # Ensure window is shown
             win.show_all()
             win.present()
+
+            # At boot the display may not be fully enumerated when
+            # build_window() ran (or batocera-settings/resolution commands
+            # failed), so the layout may have been computed from the wrong
+            # monitor. Re-check the screen selection now that all monitors
+            # are known, and re-layout if the monitor changed.
+            if is_wayland:
+                try:
+                    display = Gdk.Display.get_default()
+                    mon = select_monitor(display, self.screen)
+                    if mon is not None and mon is not self._selected_monitor:
+                        self._selected_monitor = mon
+                        self._apply_wayland_layout(win, mon)
+                        GtkLayerShell.set_monitor(win, mon)
+                except Exception as e:
+                    debug_print(f"[SCREEN] on_map re-selection failed: {e}")
 
             dpi = self._get_window_dpi(win)
             debug_print(f"[DPI] {"Wayland" if is_wayland else "X11"} DPI={int(dpi) if dpi is not None else 'unknown'} initially for '{self._scale_class}' screens")
@@ -1574,7 +1633,67 @@ class UICore:
         self._gamepads.stopThread()
         self.stop_refresh()
 
+    # Re-read the screen selection (batocera.conf / --screen) and move the
+    # layer-shell surface to that monitor. Called at build time and on every
+    # show() so a setting changed from the UI takes effect on the next popup.
+    def _apply_screen_selection(self, win: Gtk.Window | None = None):
+        win = win or self.window
+        if not win or not getattr(self, "_is_wayland", False):
+            return
+        try:
+            display = Gdk.Display.get_default()
+            mon = select_monitor(display, self.screen)
+            if mon is not None:
+                geo = mon.get_geometry()
+                if (geo.width, geo.height) != getattr(self, "_applied_layout_geometry", None):
+                    # re-layout for the selected monitor's geometry (screens may
+                    # have different resolutions, and at boot the geometry may
+                    # still be wrong/stale until the compositor is done) then
+                    # move the surface to it
+                    self._selected_monitor = mon
+                    self._applied_layout_geometry = (geo.width, geo.height)
+                    self._apply_wayland_layout(win, mon)
+                    GtkLayerShell.set_monitor(win, mon)
+        except Exception as e:
+            debug_print(f"[SCREEN] apply screen selection failed: {e}")
+
+    # At boot, BCC may start before the compositor has finished configuring
+    # outputs: the monitor list can still change (or a monitor's geometry be
+    # stale). Re-check the screen selection for a short while and re-layout
+    # whenever the selected monitor's geometry changes.
+    def _schedule_screen_stabilization(self, tries: int = 10, interval_ms: int = 2000):
+        if not getattr(self, "_is_wayland", False):
+            return
+
+        def _stabilize_tick():
+            self._apply_screen_selection()
+            tries_left = getattr(self, "_stabilize_tries_left", 0)
+            self._stabilize_tries_left = max(0, tries_left - 1)
+            return self._stabilize_tries_left > 0
+
+        self._stabilize_tries_left = tries
+        GLib.timeout_add(interval_ms, _stabilize_tick)
+
+    # Shared helper for dialogs/popups: pick the monitor the BCC window is on,
+    # so popups follow the selected screen. Prefer the monitor under the main
+    # window (works even if the setting changed mid-session), fall back to the
+    # saved screen selection.
+    def monitor_for_popup(self) -> Gdk.Monitor | None:
+        try:
+            display = Gdk.Display.get_default()
+            # Monitor currently holding the BCC window
+            if self.window and self.window.get_window():
+                mon = display.get_monitor_at_window(self.window.get_window()) \
+                    if hasattr(display, "get_monitor_at_window") else None
+                if mon is not None:
+                    return mon
+            # Fall back to the saved selection / legacy default
+            return select_monitor(display, self.screen)
+        except Exception:
+            return None
+
     def show(self, *_a):
+        self._apply_screen_selection()
         self.start_gamepad()
         self.window.present()
         self.reset_inactivity_timer()  # Reset timer on button click
@@ -4745,14 +4864,10 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
         GtkLayerShell.init_for_window(dialog)
         GtkLayerShell.set_layer(dialog, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_interactivity(dialog, False)
-        # screen
-        display = Gdk.Display.get_default()
-        if display.get_n_monitors() == 1:
-            monitor_idx = 0
-        else:
-            monitor_idx = 1 # on batocera, 0 is the main screen, and 1 is the backglass (i'm not completly sure it is correct)
-        monitor = display.get_monitor(monitor_idx)
-        GtkLayerShell.set_monitor(dialog, monitor)
+        # screen: follow the BCC window's screen
+        monitor = core.monitor_for_popup()
+        if monitor is not None:
+            GtkLayerShell.set_monitor(dialog, monitor)
 
     # Track this dialog so it can be destroyed on timeout
     core._current_dialog = dialog
@@ -4993,14 +5108,10 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
         GtkLayerShell.init_for_window(dialog)
         GtkLayerShell.set_layer(dialog, GtkLayerShell.Layer.OVERLAY)
         GtkLayerShell.set_keyboard_interactivity(dialog, False)
-        # screen
-        display = Gdk.Display.get_default()
-        if display.get_n_monitors() == 1:
-            monitor_idx = 0
-        else:
-            monitor_idx = 1 # on batocera, 0 is the main screen, and 1 is the backglass (i'm not completly sure it is correct)
-        monitor = display.get_monitor(monitor_idx)
-        GtkLayerShell.set_monitor(dialog, monitor)
+        # screen: follow the BCC window's screen
+        monitor = core.monitor_for_popup()
+        if monitor is not None:
+            GtkLayerShell.set_monitor(dialog, monitor)
 
     # Track this dialog so it can be destroyed on timeout
     core._current_dialog = dialog
@@ -5249,8 +5360,9 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
 # ---- Application wrapper ----
 class ControlCenterApp:
     def __init__(self, xml_root, css_path: str, auto_close_seconds: int = 0, hidden_at_startup = False, 
-                 fullscreen: bool = False, window_size: tuple[int, int] | None = None):
-        self.core = UICore(css_path, fullscreen, window_size)
+                 fullscreen: bool = False, window_size: tuple[int, int] | None = None,
+                 screen: str | None = None):
+        self.core = UICore(css_path, fullscreen, window_size, screen)
         self.auto_close_seconds = auto_close_seconds
         self.core._inactivity_timeout_seconds = auto_close_seconds
         self.hidden_at_startup = hidden_at_startup
@@ -5263,6 +5375,10 @@ class ControlCenterApp:
     def run(self):
         if not self.hidden_at_startup:
             self.core.show()
+
+        # At boot the compositor may not be done configuring outputs when the
+        # window was built; keep re-checking the screen selection for a while.
+        self.core._schedule_screen_stabilization()
 
         # Set up inactivity timer if specified (resets on user interaction)
         if self.auto_close_seconds > 0:

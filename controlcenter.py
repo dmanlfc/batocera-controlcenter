@@ -21,6 +21,13 @@ if script_dir not in sys.path:
     sys.path.insert(0, script_dir)
 
 os.environ.setdefault("NO_AT_BRIDGE", "1")
+# batocera-resolution and other Wayland clients spawned by BCC need this to
+# find the $WAYLAND_DISPLAY socket; the system-launched BCC process may lack it.
+if os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("XDG_RUNTIME_DIR"):
+    for _dir in ("/run/user/0", "/run"):
+        if os.path.exists(os.path.join(_dir, os.environ["WAYLAND_DISPLAY"])):
+            os.environ["XDG_RUNTIME_DIR"] = _dir
+            break
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -52,6 +59,7 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Batocera Control Center')
     parser.add_argument('--fullscreen', action='store_true', help='Run in fullscreen mode')
+    parser.add_argument('--screen', metavar='OUTPUT', help='Screen to start on (connector name or index, e.g. HDMI-A-1 or 1)')
     parser.add_argument('--window', metavar='WIDTHxHEIGHT', help='Set window size (e.g., 640x480)')
     parser.add_argument('--hidden', action='store_true', help='Start hidden')
     parser.add_argument('timeout', nargs='?', type=int, default=0, help='Auto-close timeout in seconds')
@@ -170,7 +178,8 @@ def main():
         sys.exit(2)
 
     app = ControlCenterApp(xml_root, css_path, auto_close_seconds, hidden_at_startup, 
-                          fullscreen=args.fullscreen, window_size=window_size)
+                          fullscreen=args.fullscreen, window_size=window_size,
+                          screen=args.screen)
     debug_print(f"[STARTUP] app={app}")
     app_instance[0] = app  # Store for signal handler
     app.run()

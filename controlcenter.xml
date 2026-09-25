@@ -130,6 +130,11 @@
 			<choice display="Saver"        action="batocera-power-mode Powersaver" />
 			<text display="${cat /sys/devices/system/cpu/cpufreq/policy0/scaling_governor}" refresh="1" />
 		</feature>
+		<feature name="Screen" display="BCC screen" if='${[ "$(batocera-settings-get controlcenter.screen)" ] || [ "$(batocera-resolution listOutputs | wc -l)" -gt 1 ] &amp;&amp; echo 1}' refresh="5">
+			<choice display="Auto" action="batocera-settings-set controlcenter.screen &quot;&quot;" afterclick="bcc_rescreen" />
+			<choice_cmd display="${batocera-resolution listOutputs}" action="batocera-settings-set controlcenter.screen" action_arg="${batocera-resolution listOutputs}" afterclick="bcc_rescreen" cache="5" />
+			<text display="Now: ${[ -n &quot;$(batocera-settings-get controlcenter.screen | tr -d &apos;&quot;&apos;)&quot; ] &amp;&amp; batocera-settings-get controlcenter.screen | tr -d &apos;&quot;&apos; || echo auto}" refresh="1" />
+		</feature>
 	</hgroup>
 
 	<vgroup name="Bottom bar" role="footer">
