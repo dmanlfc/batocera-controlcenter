@@ -70,6 +70,7 @@ frame > border {
 .vgroup-cell {
   background-color: #141821;
   padding: 8px 8px;
+  margin: 0 12px;
   min-height: 50px;  /* Consistent row height for grid alignment */
 }
 
@@ -77,6 +78,7 @@ frame > border {
 .scale-medium .vgroup-cell {
   background-color: #141821;
   padding: 4px 4px;
+  margin: 0 4px;
   min-height: 20px;  /* Consistent row height for grid alignment */
 }
 
@@ -85,14 +87,27 @@ frame > border {
 .scale-small .vgroup-cell-first,
 .scale-medium .vgroup-cell-first { min-width: 60px; }
 
-.vgroup-row .header + .value, .vgroup-row .value { min-width: 200px; }
+.vgroup-row .value { min-width: 200px; }
 
-.footer-row .value { min-width: 0; }
+.scale-small .vgroup-row .value,
+.scale-medium .vgroup-row .value { min-width: 80px; }
 
-.scale-small .vgroup-row .header + .value, .vgroup-row .value,
-.scale-medium .vgroup-row .header + .value, .vgroup-row .value { min-width: 80px; }
+.vgroup-row.footer-row .value { min-width: 0; }
 
-.section-separator { background-color: #232a36; min-height: 2px; }
+.feature-row { min-height: 42px; }
+
+.scale-small .feature-row,
+.scale-medium .feature-row { min-height: 32px; }
+
+.section-separator { background-color: #232a36; min-height: 2px; margin: 14px 0; }
+
+.scale-small .section-separator,
+.scale-medium .section-separator { margin: 4px 0; }
+
+.cc-outer { padding: 10px; }
+
+.scale-small .cc-outer,
+.scale-medium .cc-outer { padding: 4px; }
 
 .group-frame {
   border: 2px solid #232a36;
@@ -106,8 +121,8 @@ frame > border {
 .scale-medium .group-frame {
   border: 2px solid #232a36;
   border-radius: 6px;
-  margin: 6px 0;
-  padding: 6px;
+  margin: 2px 0;
+  padding: 4px;
   background-color: #141821;
 }
 
@@ -125,7 +140,7 @@ button {
 .scale-small button,
 .scale-medium button {
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 3px 6px;
   min-width: 40px;
   border: 1px solid #232a36;
   background-color: #12161f;
@@ -303,7 +318,7 @@ border: 2px solid #2a3240;
 border: 2px solid #2a3240;
   border-bottom: 2px solid #14181f;
   border-radius: 6px 6px 0 0;  /* Rounded top corners only */
-  padding: 6px 10px;
+  padding: 3px 10px;
   min-width: 60px;
   background-image: none;
   color: #6a7280;
@@ -335,7 +350,7 @@ button.cc-tab:checked {
   border: 3px solid #5f9dff;  /* Blue border */
   border-bottom: 2px solid #14181f;  /* Blend with content area */
   margin-bottom: -2px;
-  padding: 6px 10px;
+  padding: 3px 10px;
   box-shadow: 0 0 6px rgba(95, 157, 255, 0.3);
 }
 button.cc-tab:checked > label {
@@ -436,6 +451,7 @@ dialog .dialog-action-area,
 .scale-small .cc-progressbar > trough,
 .scale-medium .cc-progressbar > trough {
   border-radius: 4px;
+  min-width: 60px;
 }
 
 .cc-progressbar > trough > progress {
@@ -457,6 +473,12 @@ dialog .dialog-action-area,
   font-weight: 600;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
 }
+
+.feature-row .cc-progressbar-text { margin-bottom: 4px; }
+.scale-small .feature-row .cc-progressbar-text { font-size: 9px; margin-bottom: 2px; }
+.scale-medium .feature-row .cc-progressbar-text { font-size: 13px; }
+.scale-full .feature-row .cc-progressbar-text { font-size: 15px; }
+.scale-large .feature-row .cc-progressbar-text { font-size: 22px; }
 
 .cc-switch {
   background-color: #3d1f1f;
@@ -498,3 +520,28 @@ dialog .dialog-action-area,
   border-color: #4f8dff;
 }
 
+
+/* Extra large (4K) */
+.scale-xlarge * { font-size: 32px; }
+.scale-xlarge .group-title { padding: 8px 12px; border-radius: 12px; }
+.scale-xlarge frame > border { padding: 4px 12px; border-radius: 8px; }
+.scale-xlarge .vgroup-row { padding: 8px 0; }
+.scale-xlarge .vgroup-cell { padding: 16px; margin: 0 24px; min-height: 100px; }
+.scale-xlarge .vgroup-cell-first { min-width: 360px; }
+.scale-xlarge .vgroup-row .value { min-width: 400px; }
+.scale-xlarge .vgroup-row.footer-row .value { min-width: 0; }
+.scale-xlarge .feature-row { min-height: 84px; }
+.scale-xlarge .section-separator { margin: 28px 0; min-height: 4px; }
+.scale-xlarge .cc-outer { padding: 20px; }
+.scale-xlarge .group-frame { border-width: 4px; border-radius: 20px; margin: 24px 0; padding: 16px; }
+.scale-xlarge button { border-radius: 20px; padding: 16px 24px; min-width: 160px; }
+.scale-xlarge button.cc-toggle { border-radius: 20px; padding: 24px 40px; min-width: 160px; }
+.scale-xlarge button.cc-tab { border-width: 4px; border-radius: 20px 20px 0 0; padding: 20px 40px; min-width: 240px; margin: 0 6px; }
+.scale-xlarge button.cc-tab:checked { border-width: 5px; margin-bottom: -5px; padding: 20px 40px; }
+.scale-xlarge .doc-viewer-text { font-size: 28px; padding: 40px; }
+.scale-xlarge .cc-progressbar { min-width: 300px; min-height: 40px; border-radius: 20px; padding: 4px; }
+.scale-xlarge .cc-progressbar > trough { min-width: 300px; border-radius: 16px; }
+.scale-xlarge .cc-progressbar > trough > progress { min-height: 32px; border-radius: 12px; }
+.scale-xlarge .feature-row .cc-progressbar-text { font-size: 30px; margin-bottom: 8px; }
+.scale-xlarge .cc-switch { border-radius: 24px; min-width: 96px; min-height: 48px; }
+.scale-xlarge .cc-switch > slider { min-width: 40px; min-height: 40px; margin: 2px; }

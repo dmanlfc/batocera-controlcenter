@@ -223,6 +223,10 @@ _shell_cache: dict[str, tuple[float, str]] = {}
 # Commands with a background refresh in flight (dedupes concurrent refreshes).
 _refresh_in_flight: set[str] = set()
 
+def invalidate_shell_cache(cmd: str):
+    with _shell_cache_lock:
+        _shell_cache.pop(cmd, None)
+
 def run_shell_capture_cached(cmd: str, ttl_sec: float = 1.0, timeout_sec: float = 3.0) -> str:
     """
     Same as run_shell_capture, but reuses a recent result for an identical
