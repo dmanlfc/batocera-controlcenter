@@ -378,6 +378,7 @@ class UICore:
         self._animations_paused = False  # Track if animations are paused
         self._max_gif_fps = int(os.environ.get('BCC_MAX_GIF_FPS', '15'))  # Configurable max FPS
         self._enable_gif_animations = os.environ.get('BCC_ENABLE_GIF_ANIMATIONS', '1') != '0'
+        self._bar_buttons = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
 
     # Detect DPI (Thor bottom screen)
     def _dpi_from_monitor(self, monitor: Gdk.Monitor) -> float | None:
@@ -493,6 +494,8 @@ class UICore:
             if sh >= 1080:
                 height = int(sh * 0.80)
                 scale_class = "full"
+            if sh >= 2160:
+                scale_class = "xlarge"
 
             if sw < 1280:
                 # Small screen (e.g. 720x720 handheld): use the full output
@@ -612,6 +615,8 @@ class UICore:
                 if sh >= 1080:
                     max_height = int(sh * 0.80)
                     scale_class = "full"
+                if sh >= 2160:
+                    scale_class = "xlarge"
 
             # set the window on the correct screen
             monitor = self.get_main_window_monitor_from_configuration()
@@ -720,17 +725,18 @@ class UICore:
                 # Pick a scale tier from the physical display resolution.
                 #   - very small (CRT)         -> small  (10px)
                 #   - small (<=720p handhelds) -> medium (14px)
+                #   - 4K                       -> xlarge (32px)
                 #   - normal and up            -> DPI-driven full/large
                 if self._window_width < 480 or self._max_height < 480:
                     new_class = "small"
                 elif self._window_width < 1024 or self._max_height < 600:
                     new_class = "medium"
+                elif self._screen_height >= 2160:
+                    new_class = "xlarge"
                 elif dpi >= 140:
                     new_class = "large"
-                elif dpi >= 40:
-                    new_class = "full"
                 else:
-                    new_class = "small"
+                    new_class = "full"
 
                 if new_class != old_class:
                     ctx = win.get_style_context()
@@ -1915,7 +1921,7 @@ class UICore:
                 pass
             self._inactivity_timer_id = None
 
-    def make_action_cb(self, action: str, key: str, afterclick: str = ""):
+    def make_action_cb(self, action: str, key: str, afterclick: str = "", on_done=None):
         def cb(_w=None):
             act = (action or "").strip()
             if not act:
@@ -1926,6 +1932,8 @@ class UICore:
                 def run_action_with_afterclick():
                     # Run the main action first
                     run_shell_capture(act)
+                    if on_done:
+                        on_done()
                     # Force a UI refresh after EVERY action
                     GLib.idle_add(self.schedule_recompute_conditionals)
                     if afterclick:
@@ -2363,6 +2371,7 @@ class UICore:
         switch = Gtk.Switch()
         switch.get_style_context().add_class("cc-switch")
         switch.set_can_focus(True)
+        switch.set_valign(Gtk.Align.CENTER)
         
         # Apply ID as widget name for CSS
         elem_id = (sub.attrs.get("id", "") or "").strip()
@@ -3399,8 +3408,8 @@ def ui_build_containers(core: UICore, xml_root):
     core.apply_css()
 
     # Main container with header and scrollable content
-    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-    outer.set_border_width(10)
+    outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+    outer.get_style_context().add_class("cc-outer")
     win.add(outer)
 
     # Header vgroups (role="header") — non-selectable, always visible
@@ -3418,7 +3427,7 @@ def ui_build_containers(core: UICore, xml_root):
         outer.pack_start(header_box, False, False, 0)
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         sep.get_style_context().add_class("section-separator")
-        outer.pack_start(sep, False, False, 6)
+        outer.pack_start(sep, False, False, 0)
 
     # Scrollable content area - allow both horizontal and vertical scrolling
     scrolled = Gtk.ScrolledWindow()
@@ -3552,8 +3561,6 @@ def ui_build_containers(core: UICore, xml_root):
                     # Horizontal arrangement for non-tab content
                     horiz_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
                     horiz_box.set_homogeneous(True)  # Make vgroups equal width for grid alignment
-                    horiz_box.set_halign(Gtk.Align.CENTER)
-                    horiz_box.set_size_request(int(core._window_width * 0.95), -1)
                     target.pack_start(horiz_box, False, False, 0)
 
                     for sub in child.children:
@@ -3693,18 +3700,17 @@ def ui_build_containers(core: UICore, xml_root):
 
     # Footer vgroups at the bottom
     footer_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-    footer_box.set_halign(Gtk.Align.CENTER)
     for child in xml_root.children:
         if child.kind == "vgroup" and (child.attrs.get("role", "") or "").strip().lower() == "footer":
             row = _build_vgroup_row(core, child, is_header=True, is_footer=True)
             if row:
                 row.get_style_context().add_class("footer-row")
-                footer_box.pack_start(row, False, False, 0)
+                footer_box.pack_start(row, True, True, 0)
 
     if footer_box.get_children():
         sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
         sep.get_style_context().add_class("section-separator")
-        outer.pack_start(sep, False, False, 6)
+        outer.pack_start(sep, False, False, 0)
         outer.pack_start(footer_box, False, False, 0)
         # Show footer widgets since they were added after win.show_all()
         sep.show()
@@ -3812,9 +3818,6 @@ def _get_group_container_new(core: UICore, parent_box: Gtk.Box, display_title: s
     frame = Gtk.Frame()
     frame.get_style_context().add_class("group-frame")
     frame.set_shadow_type(Gtk.ShadowType.IN)
-    frame.set_halign(Gtk.Align.CENTER)  # Center the frame
-    # Set a consistent width for all groups (90% of window width)
-    frame.set_size_request(int(core._window_width * 0.95), -1)
     label = Gtk.Label(label=_(title))
     label.get_style_context().add_class("group-title")
     frame.set_label_widget(label)
@@ -3828,21 +3831,12 @@ def _get_group_container_new(core: UICore, parent_box: Gtk.Box, display_title: s
 def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False) -> Gtk.EventBox:
     row = Gtk.EventBox()
     row._is_header_row = bool(is_header)
-    row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
-    row_box.set_halign(Gtk.Align.CENTER)  # Center the row contents
-    # Set consistent width for all rows (95% of window width). The footer uses
-    # natural-width cells (cell_expand=False) so it stays only as wide as its
-    # content and centers within the window instead of overflowing it.
-    width_frac = 0.95
-    row_box.set_size_request(int(core._window_width * width_frac), -1)
+    row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
     row.add(row_box)
     row.set_above_child(False)
     row.get_style_context().add_class("vgroup-row")
 
     is_header_row = bool(is_header)
-    # Footer cells equal-expand (True) to balance the 3 features across the
-    # row width, matching the original layout. The value labels' min-width is
-    # zeroed in CSS (.footer-row .value) so the row doesn't overflow the window.
     cell_expand = True
 
     cells = []
@@ -3897,7 +3891,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 
             # Text-only cells have no controls, so they're not interactive
             cells.append((cell_event, []))
-            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 0)
 
             i = j  # Skip the text children we just processed
             continue
@@ -3981,7 +3975,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                 cell_event._control_index = 0
 
             cells.append((cell_event, cell_controls))
-            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 0)
             continue
 
         # Handle direct <img> and <qrcode> children in vgroup
@@ -4002,7 +3996,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 
             # Img/qrcode-only cells have no controls, so they're not interactive
             cells.append((cell_event, []))
-            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 0)
             continue
 
         # Handle nested <vgroup> children in vgroup - treat as a cell
@@ -4062,7 +4056,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                             core.build_doc(nested_child, sub, cell_box, pack_end=False)
 
             cells.append((cell_event, []))
-            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 0)
             continue
 
         # Handle nested <hgroup> children in vgroup
@@ -4168,7 +4162,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                 cell_event.connect("button-press-event", on_cell_click)
 
             cells.append((cell_event, cell_controls))
-            row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
+            row_box.pack_start(cell_event, cell_expand, cell_expand, 0)
             continue
 
         if child.kind != "feature":
@@ -4180,12 +4174,6 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
             cell_event.get_style_context().add_class("vgroup-cell-first")
 
         cell_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)  # Reduced spacing
-        if core._scale_class == "small":
-            cell_box.set_size_request(80, -1)  # Minimum width for grid alignment
-        elif core._scale_class == "large":
-            cell_box.set_size_size(300, -1)
-        else:
-            cell_box.set_size_request(200, -1)  # Minimum width for grid alignment
         cell_event.add(cell_box)
 
         label_text = (child.attrs.get("display", "") or child.attrs.get("name", "") or "").strip()
@@ -4346,7 +4334,7 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 
         # Always add cell to row (even if no controls) for display
         cells.append((cell_event, cell_controls))
-        row_box.pack_start(cell_event, cell_expand, cell_expand, 12)
+        row_box.pack_start(cell_event, cell_expand, cell_expand, 0)
 
     # Check if row has any interactive controls
     has_controls = any(controls for _, controls in cells)
@@ -4467,11 +4455,16 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
     row = Gtk.EventBox()
     row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    row_box.set_halign(Gtk.Align.CENTER)  # Center the row contents
-    # Set consistent width for all rows (90% of window width)
-    row_box.set_size_request(int(core._window_width * 0.90), -1)
+    row_box.get_style_context().add_class("feature-row")
     row.add(row_box)
     row.set_above_child(False)
+    first_refresher = len(core.refreshers)
+    row._refreshers = []
+
+    def refresh_row():
+        for task in row._refreshers:
+            if hasattr(task, "refresh_now"):
+                task.refresh_now()
 
     display_label = (feat.attrs.get("display", "") or feat.attrs.get("name", "") or "").strip()
 
@@ -4550,7 +4543,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             btn.set_can_focus(True)
             btn.set_size_request(70, -1)  # Fixed width for buttons
             row_box.pack_start(btn, False, False, 8)
-            btn.connect("clicked", core.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick))
+            btn.connect("clicked", core.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick, on_done=refresh_row))
             row._items.append(btn)
             
             # Add touchscreen synchronization
@@ -4592,7 +4585,10 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
                 lbl.set_halign(Gtk.Align.CENTER)
             # For features with choices, don't set fixed width - let text size naturally
             if not any(c.kind in ("choice", "choice_cmd") for c in feat.children):
-                lbl.set_width_chars(40)   # Fixed width for value to prevent shifting (non-choice features only)
+                lbl.set_hexpand(True)
+                lbl.set_line_wrap(True)
+                lbl.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
+                lbl.set_max_width_chars(40)
             row_box.pack_start(lbl, False, False, 8)
             disp = (sub.attrs.get("display", "") or "").strip()
             refresh = float(sub.attrs.get("refresh", feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
@@ -4642,7 +4638,11 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             core.build_qrcode(feat, sub, row_box, pack_end=False)
 
         elif kind == "progressbar":
-            core.build_progressbar(feat, sub, row_box, pack_end=False)
+            bar = core.build_progressbar(feat, sub, row_box, pack_end=False)
+            if bar:
+                bar.set_halign(Gtk.Align.FILL)
+                row_box.child_set_property(bar, "expand", True)
+                row_box.child_set_property(bar, "fill", True)
 
         elif kind == "doc":
             btn = core.build_doc(feat, sub, row_box, pack_end=False)
@@ -4842,6 +4842,13 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
         row._on_right = None
         row._on_activate = None
 
+    row._refreshers = core.refreshers[first_refresher:]
+
+    if any(c.kind == "progressbar" for c in feat.children):
+        for w in row_box.get_children():
+            if isinstance(w, Gtk.Button):
+                core._bar_buttons.add_widget(w)
+
     # Register feature ID if it has one and was successfully built
     register_element_id(feat, core.rendered_ids, core)
 
@@ -4896,7 +4903,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
 
     if core._scale_class == "small":
         dialog.set_default_size(240, 120)
-    elif core._scale_class == "large":
+    elif core._scale_class in ("large", "xlarge"):
         dialog.set_default_size(540, 300)
     else:
         dialog.set_default_size(400, 200)
@@ -4936,7 +4943,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
     inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     if core._scale_class == "small":
         inner.set_border_width(8)
-    elif core._scale_class == "large":
+    elif core._scale_class in ("large", "xlarge"):
         inner.set_border_width(30)
     else:
         inner.set_border_width(20)
@@ -4960,7 +4967,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
     cancel_btn.get_style_context().add_class("cc-button")
     if core._scale_class == "small":
         cancel_btn.set_size_request(80, -1)
-    elif core._scale_class == "large":
+    elif core._scale_class in ("large", "xlarge"):
         cancel_btn.set_size_request(120, -1)
     else:
         cancel_btn.set_size_request(100, -1)
@@ -4975,7 +4982,7 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
     confirm_btn.get_style_context().add_class("cc-button")
     if core._scale_class == "small":
         confirm_btn.set_size_request(80, -1)
-    elif core._scale_class == "large":
+    elif core._scale_class in ("large", "xlarge"):
         confirm_btn.set_size_request(120, -1)
     else:
         confirm_btn.set_size_request(100, -1)
@@ -5138,7 +5145,7 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
     dialog.set_modal(True)
     if core._scale_class == "small":
         dialog.set_default_size(400, 300)
-    elif core._scale_class == "large":
+    elif core._scale_class in ("large", "xlarge"):
         dialog.set_default_size(800, 300)
     else:
         dialog.set_default_size(600, 500)
@@ -5178,7 +5185,7 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
     inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
     if core._scale_class == "small":
         inner.set_border_width(10)
-    elif core._scale_class == "large":
+    elif core._scale_class in ("large", "xlarge"):
         inner.set_border_width(30)
     else:
         inner.set_border_width(20)

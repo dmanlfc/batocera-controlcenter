@@ -10,7 +10,7 @@
 import queue
 import threading
 from gi.repository import GLib
-from shell import run_shell_capture_cached
+from shell import run_shell_capture_cached, invalidate_shell_cache
 
 DEFAULT_REFRESH_SEC = 0  # no refresh by default (set refresh="1.0" on elements that need updates ever 1sec)
 
@@ -65,6 +65,10 @@ class RefreshTask:
 
     def stop(self):
         self._active = False
+
+    def refresh_now(self):
+        invalidate_shell_cache(self.cmd)
+        _work_queue.put((self.cmd, self.widget_update_fn))
 
     def _schedule_tick(self, immediate=False):
         delay = 1 if immediate else self.interval_ms
