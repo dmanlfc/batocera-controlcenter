@@ -637,11 +637,6 @@ class UICore:
                 if sh >= 2160:
                     scale_class = "xlarge"
 
-            # set the window on the correct screen
-            monitor = self.get_main_window_monitor_from_configuration()
-            if monitor is not None:
-                self.set_monitor(win, monitor)
-
         # style
         win.get_style_context().add_class("popup-root")
         win.set_name("popup-root")
