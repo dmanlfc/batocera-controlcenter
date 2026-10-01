@@ -40,7 +40,7 @@ except Exception:
     EVDEV_AVAILABLE = False
 
 from refresh import RefreshTask, ExpandRefreshTask, DEFAULT_REFRESH_SEC, Debouncer, run_off_main_thread
-from shell import run_shell_capture, run_shell_capture_cached, run_shell_capture_lines, run_shell_cache_lookup, normalize_bool_str, get_primary_geometry, expand_command_string, expand_command_string_cached, extract_commands, shell_cache_has_all, warm_shell_cache
+from shell import run_shell_capture, run_shell_capture_cached, run_shell_capture_set_to_cache, run_shell_capture_lines, run_shell_cache_lookup, normalize_bool_str, get_primary_geometry, expand_command_string, expand_command_string_cached, extract_commands, shell_cache_has_all, warm_shell_cache
 
 # handle_afterclick_before : actions to do before the call
 # handle_afterclick_after  : actions to do after the call
@@ -85,6 +85,18 @@ def handle_afterclick_after(core: 'UICore', afterclick_attr: str):
     else:
         # Direct command
         run_off_main_thread(lambda: run_shell_capture(afterclick))
+
+# refresh elements from the list update_ids
+def handle_update_ids(core: 'UICore', update_ids: set[str]):
+    """Handle updateids attribute - updates components after main action"""
+    for elem_id in update_ids:
+        if elem_id in core.refreshfunctionsbyids:
+            if elem_id in core.rendered_ids:
+                if "cmd" in core.refreshfunctionsbyids[elem_id]:
+                    val = run_shell_capture_set_to_cache(core.refreshfunctionsbyids[elem_id]["cmd"])
+                    core.refreshfunctionsbyids[elem_id]["function"](val)
+                else:
+                    core.refreshfunctionsbyids[elem_id]["function"]()
 
 def evaluate_if_condition(condition: str, rendered_ids: set[str], force_fresh: bool = False) -> bool:
     """
@@ -195,6 +207,11 @@ def cmd_of(s: str) -> str:
     s = (s or "").strip()
     return s[2:-1].strip() if is_cmd(s) else ""
 
+def xmlattr_to_set(idsstr: str) -> str:
+    ids = set()
+    if idsstr:
+        ids = [i.strip() for i in idsstr.strip().split() if i.strip()]
+    return ids
 
 class _SyntheticChoice:
     """A minimal stand-in for a <choice> CCElement, produced by expanding a
@@ -359,6 +376,8 @@ class UICore:
         self.focus_rows: list[Gtk.EventBox] = []
         self.focus_index: int = 0
         self.refreshers: list[RefreshTask] = []
+        # store refresh functions by id to be able to refresh widget from an id list
+        self.refreshfunctionsbyids: dict = {}
         self.debouncer = Debouncer(ACTION_DEBOUNCE_MS)
         self._gamepads = GamePads()
         self._inactivity_timer_id = None
@@ -1921,7 +1940,7 @@ class UICore:
                 pass
             self._inactivity_timer_id = None
 
-    def make_action_cb(self, action: str, key: str, afterclick: str = "", on_done=None):
+    def make_action_cb(self, action: str, key: str, afterclick: str = "", update_ids: set[str] = set(), on_done=None):
         def cb(_w=None):
             act = (action or "").strip()
             if not act:
@@ -1929,18 +1948,20 @@ class UICore:
             if self.debouncer.allow(key):
                 self.reset_inactivity_timer()  # Reset timer on button click
                 
-                def run_action_with_afterclick():
+                def run_action_with_afterclick_or_update_ids():
                     # Run the main action first
-                    run_shell_capture(act)
+                    run_shell_capture(act, get_output = False)
                     if on_done:
                         on_done()
                     # Force a UI refresh after EVERY action
                     GLib.idle_add(self.schedule_recompute_conditionals)
                     if afterclick:
                         GLib.idle_add(lambda: handle_afterclick_after(self, afterclick))
+                    if update_ids:
+                        GLib.idle_add(lambda: handle_update_ids(self, update_ids))
                 if afterclick:
                     GLib.idle_add(lambda: handle_afterclick_before(self, afterclick))
-                run_off_main_thread(run_action_with_afterclick)
+                run_off_main_thread(run_action_with_afterclick_or_update_ids)
         return cb
 
     def _start_conditional_heartbeat(self):
@@ -2135,6 +2156,9 @@ class UICore:
                         _core._recompute_conditionals()
 
             self.refreshers.append(ExpandRefreshTask(upd_expand, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd_expand}
 
             # Initial evaluation
             def set_initial():
@@ -2195,6 +2219,9 @@ class UICore:
                         _core._recompute_conditionals()
 
             self.refreshers.append(RefreshTask(upd, c, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd}
 
         else:
             # Static text
@@ -2212,6 +2239,7 @@ class UICore:
         text = (sub.attrs.get("display", "") or "Button").strip()
         action = sub.attrs.get("action", "")
         afterclick = sub.attrs.get("afterclick", "")
+        update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
         btn = Gtk.Button.new_with_label(_(text))
         btn.get_style_context().add_class("cc-button")
         btn.set_can_focus(True)
@@ -2226,7 +2254,7 @@ class UICore:
             btn.set_halign(Gtk.Align.CENTER)
 
         (row_box.pack_end if pack_end else row_box.pack_start)(btn, False, False, 6)
-        btn.connect("clicked", self.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick))
+        btn.connect("clicked", self.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick, update_ids=update_ids))
         
         # Add touchscreen synchronization
         self.add_touch_sync_to_widget(btn)
@@ -2243,6 +2271,7 @@ class UICore:
         action_on = sub.attrs.get("action_on", "")
         action_off = sub.attrs.get("action_off", "")
         afterclick = sub.attrs.get("afterclick", "")
+        update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
         refresh = float(sub.attrs.get("refresh", parent_feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
 
         # Determine which command to use for status
@@ -2319,6 +2348,9 @@ class UICore:
                     toggle_state["updating"] = False
 
             self.refreshers.append(RefreshTask(upd, status_cmd, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd}
         else:
             # If no status command, just show ON/OFF based on initial state
             update_toggle_label()
@@ -2340,10 +2372,12 @@ class UICore:
             act = action_on if tbtn.get_active() else action_off
             if act:
                 def run_toggle_action():
-                    run_shell_capture(act)
+                    run_shell_capture(act, get_output = False)
                     # Run afterclick if specified
                     if afterclick:
                         handle_afterclick_after(self, afterclick)
+                    if update_ids:
+                        handle_update_ids(self, update_ids)
                 if afterclick:
                     handle_afterclick_before(self, afterclick)
                 run_off_main_thread(run_toggle_action)
@@ -2388,6 +2422,7 @@ class UICore:
         action_on = (sub.attrs.get("action_on", "") or "").strip()
         action_off = (sub.attrs.get("action_off", "") or "").strip()
         afterclick = sub.attrs.get("afterclick", "")
+        update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
         value_cmd = (sub.attrs.get("value", "") or "").strip()
         refresh = float(sub.attrs.get("refresh", parent_feat.attrs.get("refresh", DEFAULT_REFRESH_SEC)))
         
@@ -2457,10 +2492,12 @@ class UICore:
                 def run_switch_action(action):
                     if afterclick:
                         handle_afterclick_before(self, afterclick)
-                    run_shell_capture(action)
+                    run_shell_capture(action, get_output = False)
                     # Run afterclick if specified
                     if afterclick:
                         handle_afterclick_after(self, afterclick)
+                    if update_ids:
+                        handle_update_ids(self, update_ids)
                 
                 if state and action_on:
                     if self.debouncer.allow(f"switch_on:{action_on}"):
@@ -2499,6 +2536,9 @@ class UICore:
                 # Don't hide switch on empty values to prevent blinking
             
             self.refreshers.append(RefreshTask(upd, c, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd}
         
         elif value_cmd:
             # Static value
@@ -2768,6 +2808,9 @@ class UICore:
                     ensure_button_absent()
 
             self.refreshers.append(RefreshTask(lambda v, f=upd: f(v), c, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd}
             # Return button (may be None if initial path invalid)
             return state["btn"]
 
@@ -2958,6 +3001,9 @@ class UICore:
             def upd(val: str, _img=img):
                 update_image(val)
             self.refreshers.append(RefreshTask(upd, c, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd}
         elif disp:
             # Static image path - load immediately
             update_image(disp)
@@ -3202,6 +3248,9 @@ class UICore:
                     GLib.idle_add(hide_and_unregister)
 
             self.refreshers.append(RefreshTask(upd, c, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd}
 
             # Generate initial QR code
             update_qrcode(initial_val, qrcode_style, qrcode_logo, qrcode_font, footer_text)
@@ -3379,6 +3428,9 @@ class UICore:
                     GLib.idle_add(hide_and_unregister)
             
             self.refreshers.append(RefreshTask(upd, c, refresh))
+            element_id = (sub.attrs.get("id", "") or "").strip()
+            if element_id:
+                self.refreshfunctionsbyids[element_id] = {"function": upd, "cmd": c}
             
             # Set initial value
             update_progress(initial_val)
@@ -3954,14 +4006,15 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                     text = (sub.attrs.get("display", "") or "Confirm?").strip()
                     action = sub.attrs.get("action", "")
                     afterclick = sub.attrs.get("afterclick", "")
+                    update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
                     btn = Gtk.Button.new_with_label(_(text))
                     btn.get_style_context().add_class("cc-button")
                     btn.get_style_context().add_class("cc-button-confirm")
                     btn.set_can_focus(True)
                     cell_box.pack_start(btn, False, False, 6)
-                    def on_confirm_click(_w, _core=core, _text=text, _action=action, _afterclick=afterclick):
+                    def on_confirm_click(_w, _core=core, _text=text, _action=action, _afterclick=afterclick, _update_ids=update_ids):
                         _core._about_to_show_dialog = True
-                        _show_confirm_dialog(_core, _text, _action, _afterclick)
+                        _show_confirm_dialog(_core, _text, _action, _afterclick, _update_ids)
                         _core._about_to_show_dialog = False
                     btn.connect("clicked", on_confirm_click)
                     cell_controls.append(btn)
@@ -4130,7 +4183,8 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                             def on_confirm_click(_w, _core=core, _text=text, _action=action):
                                 _core._about_to_show_dialog = True
                                 _afterclick = sub.attrs.get("afterclick", "")
-                                _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick); _core._about_to_show_dialog = False
+                                _update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
+                                _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick, _update_ids); _core._about_to_show_dialog = False
                                 _core._about_to_show_dialog = False
                             btn.connect("clicked", on_confirm_click)
                             register_element_id(sub, core.rendered_ids)
@@ -4227,7 +4281,8 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
                         nested_box.pack_start(btn, False, False, 3)
                         def on_confirm_click(_w, _core=core, _text=text, _action=action):
                             _afterclick = hg_child.attrs.get("afterclick", "")
-                            _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick); _core._about_to_show_dialog = False
+                            _update_ids = xmlattr_to_set(hg_child.attrs.get("updateids", ""))
+                            _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick, _update_ids); _core._about_to_show_dialog = False
                         btn.connect("clicked", on_confirm_click)
                         cell_controls.append(btn)
                         
@@ -4261,7 +4316,8 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 
                 def on_confirm_click(_w, _core=core, _text=text, _action=action):
                     _afterclick = sub.attrs.get("afterclick", "")
-                    _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick); _core._about_to_show_dialog = False
+                    _update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
+                    _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick, _update_ids); _core._about_to_show_dialog = False
 
                 btn.connect("clicked", on_confirm_click)
                 cell_controls.append(btn)
@@ -4538,12 +4594,13 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             text = (sub.attrs.get("display", "") or "Button").strip()
             action = sub.attrs.get("action", "")
             afterclick = sub.attrs.get("afterclick", "")
+            update_ids = xmlattr_to_set(sub.attrs.get("updateids", ""))
             btn = Gtk.Button.new_with_label(_(text))
             btn.get_style_context().add_class("cc-button")
             btn.set_can_focus(True)
             btn.set_size_request(70, -1)  # Fixed width for buttons
             row_box.pack_start(btn, False, False, 8)
-            btn.connect("clicked", core.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick, on_done=refresh_row))
+            btn.connect("clicked", core.make_action_cb(action, key=f"btn:{text}:{action}", afterclick=afterclick, update_ids=update_ids, on_done=refresh_row))
             row._items.append(btn)
             
             # Add touchscreen synchronization
@@ -4553,6 +4610,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             text = (sub.attrs.get("display", "") or "Confirm?").strip()
             action = sub.attrs.get("action", "")
             afterclick = sub.attrs.get("afterclick", "")
+            update_ids = xmlattr_to_set(sub.attrs.get("update_ids", ""))
             btn = Gtk.Button.new_with_label(_(text))
             btn.get_style_context().add_class("cc-button")
             btn.get_style_context().add_class("cc-button-confirm")
@@ -4561,7 +4619,7 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
             row_box.pack_start(btn, False, False, 8)
 
             def on_confirm_click(_w):
-                core._about_to_show_dialog = True; _show_confirm_dialog(core, text, action, afterclick); core._about_to_show_dialog = False
+                core._about_to_show_dialog = True; _show_confirm_dialog(core, text, action, afterclick, update_ids); core._about_to_show_dialog = False
 
             btn.connect("clicked", on_confirm_click)
             row._items.append(btn)
@@ -4608,6 +4666,9 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
                     _l.set_text(expand_command_string(_disp))
 
                 core.refreshers.append(ExpandRefreshTask(upd_expand, refresh))
+                element_id = (sub.attrs.get("id", "") or "").strip()
+                if element_id:
+                    core.refreshfunctionsbyids[element_id] = {"function": upd_expand}
                 initial_val = expand_command_string(disp)
                 lbl.set_text(initial_val)
                 # Register ID if content is non-empty
@@ -4625,6 +4686,9 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
                         if elem_id and elem_id in _core.rendered_ids:
                             _core.rendered_ids.remove(elem_id)
                 core.refreshers.append(RefreshTask(upd, c, refresh))
+                element_id = (sub.attrs.get("id", "") or "").strip()
+                if element_id:
+                    core.refreshfunctionsbyids[element_id] = {"function": upd}
             else:
                 lbl.set_text(disp)
                 # Register ID for static text if non-empty
@@ -4673,7 +4737,8 @@ def _build_feature_row(core: UICore, feat) -> Gtk.EventBox:
                     nested_box.pack_start(btn, False, False, 3)
                     def on_confirm_click(_w, _core=core, _text=text, _action=action):
                         _afterclick = hg_child.attrs.get("afterclick", "")
-                        _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick); _core._about_to_show_dialog = False
+                        _update_ids = xmlattr_to_set(hg_child.attrs.get("update_ids", ""))
+                        _core._about_to_show_dialog = True; _show_confirm_dialog(_core, _text, _action, _afterclick, _update_ids); _core._about_to_show_dialog = False
                     btn.connect("clicked", on_confirm_click)
                     row._items.append(btn)
 
@@ -4878,7 +4943,7 @@ def _hide_dialog_action_area(dialog):
         content.set_vexpand(True)
         content.set_hexpand(True)
 
-def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: str = ""):
+def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: str = "", update_ids: set[str] = set()):
     """Show a confirmation dialog before executing an action"""
     core._dialog_open = True  # Prevent main window from closing
     core._suspend_inactivity_timer = True  # Suspend timer for confirm dialog
@@ -5044,10 +5109,12 @@ def _show_confirm_dialog(core: UICore, message: str, action: str, afterclick: st
         dialog.destroy()
         if action:
             def run_confirm_action():
-                run_shell_capture(action)
+                run_shell_capture(action, get_output = False)
                 # Run afterclick if specified
                 if afterclick:
                     handle_afterclick_after(core, afterclick)
+                if update_ids:
+                    handle_update_ids(core, update_ids)
             if afterclick:
                 handle_afterclick_before(core, afterclick)
             run_off_main_thread(run_confirm_action)
@@ -5210,15 +5277,17 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
     choice_buttons = []
     current_choice = [0]  # Always start with first choice
 
-    def on_choice_selected(action: str, afterclick_attr: str = ""):
+    def on_choice_selected(action: str, afterclick_attr: str = "", update_ids_attr: str = ""):
         import threading
         dialog.destroy()
         if action:
             def run_choice_action():
-                run_shell_capture(action)
+                run_shell_capture(action, get_output = False)
                 # Run afterclick if specified
                 if afterclick_attr:
                     handle_afterclick_after(core, afterclick_attr)
+                if update_ids_attr:
+                    handle_afterclick_after(core, update_ids_attr)
             if afterclick_attr:
                 handle_afterclick_before(core, afterclick_attr)
             run_off_main_thread(run_choice_action)
@@ -5285,15 +5354,16 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
 
         action = choice.attrs.get("action", "")
         afterclick = choice.attrs.get("afterclick", "")
+        update_ids = xmlattr_to_set(choice.attrs.get("update_ids", ""))
 
         btn = Gtk.Button.new_with_label(_(display))
         btn.set_can_focus(True)
         btn.get_style_context().add_class("choice-option")
         choice_box.pack_start(btn, False, False, 0)
 
-        def on_choice_click(_w, a=action, ac=afterclick):
+        def on_choice_click(_w, a=action, ac=afterclick, ui=update_ids):
             core.reset_inactivity_timer()  # Reset timer on button click
-            on_choice_selected(a, ac)
+            on_choice_selected(a, ac, ui)
 
         btn.connect("clicked", on_choice_click)
         choice_buttons.append(btn)

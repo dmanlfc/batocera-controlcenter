@@ -244,6 +244,7 @@ Executes a shell command when clicked.
   - Use `afterclick="bcc_close"` to close all BCC windows
   - Use `afterclick="${command}"` to execute a shell command
   - Use `afterclick="direct_command"` to execute a direct command
+- `updateids`: list of elements to refresh after the action is executed
 - `align`: Button alignment - `left`, `center` (default), or `right`
 
 #### `<button_confirm>` - Confirmation Button
@@ -258,6 +259,7 @@ Shows a confirmation dialog before executing the action.
 - `display`: Button label (also used in confirmation message)
 - `action`: Shell command to execute after confirmation
 - `afterclick`: Command or action to execute after the main action completes (optional)
+- `updateids`: list of elements to refresh after the action is executed
 
 #### `<toggle>` - Toggle Switch
 A switch that executes different commands for ON/OFF states.
@@ -280,6 +282,7 @@ A switch that executes different commands for ON/OFF states.
 - `action_on`: Command to execute when turning ON
 - `action_off`: Command to execute when turning OFF
 - `afterclick`: Command or action to execute after the main action completes (optional)
+- `updateids`: list of elements to refresh after the action is executed
 - `refresh`: Update interval in seconds (default: 0 = no refresh). Can be integer or float (e.g., `1`, `0.5`, `2.5`)
 - `align`: Toggle alignment - `left`, `center` (default), or `right`
 
@@ -304,6 +307,7 @@ A modern switch widget (GtkSwitch) that executes different commands for ON/OFF s
 - `action_on`: Command to execute when turning ON
 - `action_off`: Command to execute when turning OFF
 - `afterclick`: Command or action to execute after the main action completes (optional)
+- `updateids`: list of elements to refresh after the action is executed
 - `refresh`: Update interval in seconds (default: 0 = no refresh). Can be integer or float (e.g., `1`, `0.5`, `2.5`)
 - `align`: Switch alignment - `left`, `center` (default), or `right`
 
@@ -394,6 +398,7 @@ expires a background refresh warms the cache again so the next open is still ins
 - `display`: Option label in the popup (supports `${...}` command substitution for dynamic labels)
 - `action`: Shell command to execute when selected
 - `afterclick`: Command or action to execute after the main action completes (optional)
+- `updateids`: list of elements to refresh after the action is executed
 - `cache`: Time-to-live in seconds for a cached dynamic `display` label (optional, default `5`; only meaningful with `display="${...}"`)
 
 #### `<choice_cmd>` - Dynamic Choice List
@@ -442,6 +447,7 @@ popup stays snappy and repeated opens don't re-spawn the commands.
 - `action`: Base shell command run when an option is selected; the per-option argument is appended (required)
 - `action_arg`: `${...}` command whose stdout lines become the per-option argument appended to `action` (optional; when omitted only the base `action` runs)
 - `afterclick`: Command or action to execute after the main action completes (optional)
+- `updateids`: list of elements to refresh after the action is executed
 - `cache`: Time-to-live in seconds for the cached `display`/`action_arg` results (optional, default `5`)
 
 #### `<tab>` - Tab Navigation

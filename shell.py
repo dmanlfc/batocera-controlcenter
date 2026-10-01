@@ -180,7 +180,7 @@ def warm_shell_cache(cmds, timeout_sec: float = 3.0):
     for c in to_run:
         threading.Thread(target=_bg, args=(c,), daemon=True).start()
 
-def run_shell_capture(cmd: str, timeout_sec: float = 3.0) -> str:
+def run_shell_capture(cmd: str, timeout_sec: float = 3.0, get_output = True) -> str:
     """
     Execute a command and capture stdout safely.
     - Uses shell=True only when shell metacharacters are present.
@@ -191,18 +191,22 @@ def run_shell_capture(cmd: str, timeout_sec: float = 3.0) -> str:
         return ""
     use_shell = any(c in cmd for c in ['$', '|', '&', ';', '`', '>', '<'])
     try:
+        proc_stdout = subprocess.DEVNULL
+        if get_output:
+            proc_stdout = subprocess.PIPE
+
         if use_shell:
             proc = subprocess.Popen(
                 cmd,
                 shell=True,
-                stdout=subprocess.PIPE,
+                stdout=proc_stdout,
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid,
             )
         else:
             proc = subprocess.Popen(
                 shlex.split(cmd),
-                stdout=subprocess.PIPE,
+                stdout=proc_stdout,
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid,
             )
@@ -226,6 +230,12 @@ _refresh_in_flight: set[str] = set()
 def invalidate_shell_cache(cmd: str):
     with _shell_cache_lock:
         _shell_cache.pop(cmd, None)
+
+def run_shell_capture_set_to_cache(cmd: str, timeout_sec: float = 3.0) -> str:
+    """
+    Same as run_shell_capture, but save the result to cache by forcing a negative ttl
+    """
+    return run_shell_capture_cached(cmd, -1.0, timeout_sec)
 
 def run_shell_capture_cached(cmd: str, ttl_sec: float = 1.0, timeout_sec: float = 3.0) -> str:
     """
