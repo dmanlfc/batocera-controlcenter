@@ -3872,10 +3872,10 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 
         # Handle direct <feature> children in vgroup
         if child.kind == "feature":
-            # Check if feature should be rendered based on 'if' condition
-            if not should_render_element(child, core.rendered_ids):
+            if_cond = (child.attrs.get("if", "") or "").strip()
+            if if_cond and not should_render_element(child, core.rendered_ids):
                 continue
-                
+
             cell_event = Gtk.EventBox()
             cell_event.get_style_context().add_class("vgroup-cell")
             if len(cells) == 0:
@@ -3886,6 +3886,12 @@ def _build_vgroup_row(core: UICore, vg, is_header: bool, is_footer: bool = False
 
             # Track controls for navigation
             cell_controls = []
+
+            # Dynamic visibility for ${...} conditions: register the cell like
+            # _build_feature_row does, so that the "if heartbeat" manages its visibility.
+            if if_cond:
+                core._conditional_widgets.append((cell_event, if_cond))
+                cell_event.set_visible(False)
 
             # Add feature label if present
             label_text = (child.attrs.get("display", "") or child.attrs.get("name", "") or "").strip()
