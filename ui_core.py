@@ -696,7 +696,7 @@ class UICore:
             # Handle fullscreen mode
             if self.fullscreen:
                 if is_wayland:
-                    # For Wayland, we'll handle fullscreen in the sway_commands
+                    # For Wayland, fullscreen is handled via layer-shell layout
                     pass
                 else:
                     # For X11, use GTK fullscreen
@@ -758,81 +758,6 @@ class UICore:
                     ctx.add_class(f"scale-{new_class}")
                     self._scale_class = new_class
                     debug_print(f"[DPI] scale_class changed {old_class} -> {new_class}")
-
-            if is_wayland:
-                def sway_commands():
-                    import subprocess
-                    import time
-                    import json
-
-                    # Wait for window to appear in Sway's tree and find its app_id
-                    app_id = None
-                    window_title = WINDOW_TITLE
-
-                    for attempt in range(10):
-                        try:
-                            result = subprocess.run(['swaymsg', '-t', 'get_tree'],
-                                                  capture_output=True, text=True, timeout=1)
-                            if result.returncode == 0:
-                                tree = json.loads(result.stdout)
-
-                                # Find our window by title
-                                def find_window(node):
-                                    if isinstance(node, dict):
-                                        if node.get('name') == window_title or node.get('app_id', '').endswith('controlcenter'):
-                                            return node.get('app_id')
-                                        for child in node.get('nodes', []) + node.get('floating_nodes', []):
-                                            result = find_window(child)
-                                            if result:
-                                                return result
-                                    return None
-
-                                app_id = find_window(tree)
-                                if app_id:
-                                    break
-                        except Exception:
-                            pass
-                        time.sleep(0.1)
-
-                    if not app_id:
-                        return False
-
-                    # Manipulate the window to make it visible
-                    try:
-                        if self.fullscreen:
-                            # For fullscreen mode on Wayland
-                            subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'fullscreen', 'enable'],
-                                         capture_output=True, timeout=1)
-                        else:
-                            # Make it floating
-                            subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'floating', 'enable'],
-                                         capture_output=True, timeout=1)
-
-                            # Remove decorations (border)
-                            subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'border', 'none'],
-                                         capture_output=True, timeout=1)
-
-                            # Briefly fullscreen to force visibility, then restore
-                            subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'fullscreen', 'enable'],
-                                         capture_output=True, timeout=1)
-                            time.sleep(0.05)
-                            subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'fullscreen', 'disable'],
-                                         capture_output=True, timeout=1)
-
-                            # Center the window (Sway config can override this if it has positioning rules)
-                            subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'move', 'position', 'center'],
-                                         capture_output=True, timeout=1)
-
-                        # Focus the window
-                        subprocess.run(['swaymsg', f'[app_id="{app_id}"]', 'focus'],
-                                     capture_output=True, timeout=1)
-                    except Exception:
-                        pass
-
-                    return False
-
-                # Run sway commands in a background thread
-                run_off_main_thread(sway_commands)
 
             try:
                 win.grab_focus()
@@ -5418,21 +5343,6 @@ def _open_choice_popup(core: UICore, feature_label: str, choices):
                 except Exception:
                     pass
         run_off_main_thread(_refresh_labels)
-
-    # On Wayland, remove dialog decorations
-    if core._is_wayland:
-        def remove_dialog_decorations():
-            import subprocess
-            try:
-                # Wait a moment for dialog to appear in Sway tree
-                import time
-                time.sleep(0.1)
-                # Remove border from any dialog window
-                subprocess.run(['swaymsg', '[title="^$"]', 'border', 'none'],
-                             capture_output=True, timeout=1)
-            except Exception:
-                pass
-        run_off_main_thread(remove_dialog_decorations)
 
     # Connect destroy handler to clean up
     def on_dialog_destroy(*_):

@@ -1,12 +1,12 @@
 # Batocera Control Center
 
-A flexible, XML-driven control panel for Batocera that provides an on-screen interface for system configuration and control. Works on both X11 and Wayland (Sway) with gamepad, touchscreen and keyboard support
+A flexible, XML-driven control panel for Batocera that provides an on-screen interface for system configuration and control. Works on both X11 and Wayland (labwc) with gamepad, touchscreen and keyboard support
 
 ![Batocera Control Center](controlcenter-screenshot.png)
 
 ## Features
 
-- **Cross-platform**: Works on X11 and Wayland/Sway
+- **Cross-platform**: Works on X11 and Wayland (labwc)
 - **Multiple input methods**: Keyboard, mouse, touchscreen, and gamepad (via evdev)
 - **XML-driven UI**: Define your interface in a simple XML file
 - **Live updates**: Display values update automatically from shell commands
@@ -1100,7 +1100,7 @@ Supported controllers: Xbox, PlayStation, and most standard gamepads.
 
 ### Positioning
 - **X11**: Centered horizontally, 20px from top
-- **Wayland/Sway**: Centered by compositor
+- **Wayland (labwc)**: Centered by compositor
 
 ### Auto-Close
 The window closes automatically in these situations:
@@ -1109,12 +1109,6 @@ The window closes automatically in these situations:
    - Does not close while dialogs are open
 2. **Focus loss**: When clicking outside the window
    - Does not close when opening dialogs (choice/confirm)
-
-### Wayland/Sway Specific
-On Wayland/Sway, the window uses a special technique to ensure visibility:
-- Briefly enters fullscreen mode on startup
-- Returns to floating mode and centers
-- This works around Sway's visibility handling for floating windows
 
 ## Development
 
@@ -1169,7 +1163,7 @@ Enable debug output by checking the console. The application prints:
 - GTK 3.0
 - GLib
 - python-evdev (for gamepad support)
-- Wayland/Sway or X11
+- Wayland (labwc) or X11
 
 ## License
 
@@ -1188,8 +1182,8 @@ Contributions are welcome! Please ensure:
 ## Troubleshooting
 
 ### Window doesn't appear on Wayland
-- Ensure Sway is running: `echo $WAYLAND_DISPLAY`
-- Check Sway logs: `journalctl -u sway`
+- Ensure labwc is running: `echo $WAYLAND_DISPLAY`
+- Check labwc logs: `journalctl -u labwc`
 - Try with decorations: The window uses decorated mode on Wayland by default
 
 ### Gamepad not working
